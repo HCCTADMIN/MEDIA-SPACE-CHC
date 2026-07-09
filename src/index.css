@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* #414141 shades mapping to prevent pure black usage */
+  --color-black: #414141;
+  --color-zinc-950: #414141;
+  --color-zinc-900: #4c4c4c;
+  --color-zinc-850: #585858;
+  --color-zinc-800: #626262;
+  --color-zinc-700: #707070;
+  --color-zinc-600: #808080;
+  --color-zinc-500: #909090;
+  --color-zinc-400: #a0a0a0;
+  --color-zinc-300: #c0c0c0;
+  --color-zinc-200: #e0e0e0;
+  --color-zinc-100: #ededed;
+  --color-zinc-50: #f7f7f7;
+
+  --color-gray-950: #414141;
+  --color-gray-900: #4c4c4c;
+  --color-gray-850: #585858;
+  --color-gray-800: #626262;
+  --color-gray-700: #707070;
+  --color-gray-600: #808080;
+  --color-gray-500: #909090;
+  --color-gray-400: #a0a0a0;
+  --color-gray-300: #c0c0c0;
+  --color-gray-200: #e0e0e0;
+  --color-gray-100: #ededed;
+  --color-gray-50: #f7f7f7;
+
+  --color-neutral-950: #414141;
+  --color-neutral-900: #4c4c4c;
+  --color-neutral-850: #585858;
+  --color-neutral-800: #626262;
+  --color-neutral-700: #707070;
+  --color-neutral-600: #808080;
+  --color-neutral-500: #909090;
+  --color-neutral-400: #a0a0a0;
+  --color-neutral-300: #c0c0c0;
+  --color-neutral-200: #e0e0e0;
+  --color-neutral-100: #ededed;
+  --color-neutral-50: #f7f7f7;
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+/* Custom scrollbar styling using #414141 shades */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(65, 65, 65, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(65, 65, 65, 0.12);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(65, 65, 65, 0.22);
+}
+
+/* Liquid Glass classes with no pure black */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(65, 65, 65, 0.06);
+}
+
+.liquid-glass-dark {
+  background: rgba(65, 65, 65, 0.7);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(65, 65, 65, 0.3);
+}
+
+.liquid-glass-input {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(65, 65, 65, 0.08);
+  transition: all 0.2s ease-in-out;
+}
+
+.liquid-glass-input:focus {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: #be1f24;
+  box-shadow: 0 0 0 1px #be1f24;
+}
+
+/* Copyright & Anti-Screenshot Protection */
+img {
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+/* Hide entire app viewport when printing or saving as PDF */
+@media print {
+  body, html, #root {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+}
+
+

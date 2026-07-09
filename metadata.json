@@ -1,0 +1,6 @@
+{
+  "name": "CHC SYRIA | Media Space",
+  "description": "A highly polished photo library and archive for CHC SYRIA | Media Space, featuring automated metadata extraction, AI captioning, search, and administrative curation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
