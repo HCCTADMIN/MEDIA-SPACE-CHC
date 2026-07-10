@@ -102,43 +102,17 @@ let usersCollection: UserAccount[] = [
   {
     id: "user_owner1",
     email: "ct.aleppo2@gmail.com",
+    password: "hccthcct",
+    emailVerified: true,
     name: "ct.aleppo2",
     role: "super_admin",
     status: "Approved",
     createdAt: "2026-07-02",
-    provider: "google",
+    provider: "email",
     avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
     coverUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
     bio: "Main System Owner & Administrator.",
     organization: "Christian Hope Center Aleppo",
-    notifications: []
-  },
-  {
-    id: "user_owner2",
-    email: "ct.aleppo1@gmail.com",
-    name: "ct.aleppo1",
-    role: "super_admin",
-    status: "Approved",
-    createdAt: "2026-07-02",
-    provider: "google",
-    avatarUrl: "https://api.dicebear.com/7.x/adventurer/svg?seed=ct.aleppo1",
-    coverUrl: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&auto=format&fit=crop&q=80",
-    bio: "Main System Owner & Administrator.",
-    organization: "Christian Hope Center Aleppo",
-    notifications: []
-  },
-  {
-    id: "user_owner3",
-    email: "fares.badawi@hcsyria.org",
-    name: "fares.badawi",
-    role: "super_admin",
-    status: "Approved",
-    createdAt: "2026-07-02",
-    provider: "google",
-    avatarUrl: "https://api.dicebear.com/7.x/adventurer/svg?seed=fares.badawi",
-    coverUrl: "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&auto=format&fit=crop&q=80",
-    bio: "Main System Owner & Administrator.",
-    organization: "Christian Hope Center Syria",
     notifications: []
   }
 ];
@@ -251,57 +225,51 @@ function getGeminiClient(): GoogleGenAI {
 // 1. User Login
 app.post("/api/auth/login", (req, res) => {
   try {
-    const { email, name, provider, avatarUrl } = req.body;
-    if (!email) {
-      res.status(400).json({ error: "Email is required." });
+    const { email, password } = req.body;
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required." });
       return;
     }
 
     let user = usersCollection.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-    if (provider === "google") {
-      if (!user) {
-        const rawName = name || email.split("@")[0];
-        const formattedName = formatUsername(rawName);
-        // Create a new pending user with external_user role by default
-        user = {
-          id: `user_${Date.now()}`,
-          email: email.toLowerCase(),
-          name: formattedName,
-          role: "external_user",
-          status: "Pending", // Needs admin or archive manager approval
-          createdAt: new Date().toISOString().split("T")[0],
-          provider: "google",
-          avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(email)}`,
-          organization: ""
-        };
-        usersCollection.push(user);
-
-        // Notify Admins & Archive Managers of pending registration
-        usersCollection.forEach((u) => {
-          if (["super_admin", "archive_manager"].includes(u.role)) {
-            if (!u.notifications) u.notifications = [];
-            u.notifications.unshift({
-              id: `notif_reg_${user?.id || Date.now()}_${Date.now()}`,
-              message: `Action Needed: New pending account registration from "${user?.name || "New User"}" (${user?.email || ""}).`,
-              read: false,
-              timestamp: new Date().toISOString()
-            });
-          }
-        });
-
-        res.status(201).json({ user, message: "Google account registered. Pending administrator or archive manager approval." });
-        return;
-      }
-      res.json({ user, message: "Logged in successfully with Google." });
-    } else {
-      // Email login
-      if (!user) {
-        res.status(401).json({ error: "No account found with this email. Please sign up." });
-        return;
-      }
-      res.json({ user, message: "Logged in successfully." });
+    if (!user) {
+      res.status(401).json({ error: "No account found with this email. Please sign up." });
+      return;
     }
+
+    if (user.password !== password) {
+      res.status(401).json({ error: "Incorrect password." });
+      return;
+    }
+
+    if (!user.emailVerified) {
+      res.status(403).json({
+        error: "Email not verified.",
+        code: "EMAIL_NOT_VERIFIED",
+        email: user.email,
+        verificationCode: user.verificationCode
+      });
+      return;
+    }
+
+    if (user.status === "Pending") {
+      res.status(403).json({
+        error: "Your account is verified, but pending approval by the owner (ct.aleppo2@gmail.com).",
+        code: "PENDING_APPROVAL"
+      });
+      return;
+    }
+
+    if (user.status === "Rejected") {
+      res.status(403).json({
+        error: "Your account registration has been declined by the administrator.",
+        code: "REJECTED"
+      });
+      return;
+    }
+
+    res.json({ user, message: "Logged in successfully." });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -310,9 +278,9 @@ app.post("/api/auth/login", (req, res) => {
 // 2. User Registration (Email-based)
 app.post("/api/auth/register", (req, res) => {
   try {
-    const { email, name, role, organization } = req.body;
-    if (!email || !name) {
-      res.status(400).json({ error: "Email and Name are required." });
+    const { email, password, name, role, organization } = req.body;
+    if (!email || !password || !name) {
+      res.status(400).json({ error: "Email, name, and password are required." });
       return;
     }
 
@@ -323,10 +291,14 @@ app.post("/api/auth/register", (req, res) => {
     }
 
     const formattedName = formatUsername(name);
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser: UserAccount = {
       id: `user_${Date.now()}`,
       email: email.toLowerCase(),
+      password,
+      emailVerified: false,
+      verificationCode,
       name: formattedName,
       role: (role as UserRole) || "external_user",
       status: "Pending", // Needs admin or archive manager approval
@@ -338,20 +310,64 @@ app.post("/api/auth/register", (req, res) => {
 
     usersCollection.push(newUser);
 
-    // Notify Admins & Archive Managers of pending registration
+    res.status(201).json({
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        status: newUser.status,
+        provider: newUser.provider,
+        emailVerified: newUser.emailVerified
+      },
+      verificationCode,
+      message: "Registration successful. Please verify your email with the verification code."
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2b. Email Verification
+app.post("/api/auth/verify-email", (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      res.status(400).json({ error: "Email and verification code are required." });
+      return;
+    }
+
+    const user = usersCollection.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    if (user.verificationCode !== code) {
+      res.status(400).json({ error: "Incorrect verification code." });
+      return;
+    }
+
+    user.emailVerified = true;
+    user.verificationCode = undefined;
+
+    // Notify Admins & Archive Managers of pending registration AFTER email is verified
     usersCollection.forEach((u) => {
       if (["super_admin", "archive_manager"].includes(u.role)) {
         if (!u.notifications) u.notifications = [];
         u.notifications.unshift({
-          id: `notif_reg_${newUser.id}_${Date.now()}`,
-          message: `Action Needed: New pending account registration from "${newUser.name}" (${newUser.email}).`,
+          id: `notif_reg_${user.id}_${Date.now()}`,
+          message: `Action Needed: New pending account registration from "${user.name}" (${user.email}).`,
           read: false,
           timestamp: new Date().toISOString()
         });
       }
     });
 
-    res.status(201).json({ user: newUser, message: "Registration successful. Pending approval by administrator or archive manager." });
+    res.json({
+      success: true,
+      message: "Email verified successfully! Your account is now pending approval by the owner."
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

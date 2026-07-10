@@ -35,6 +35,9 @@ export interface FullResRequest {
 export interface UserAccount {
   id: string;
   email: string;
+  password?: string;
+  emailVerified?: boolean;
+  verificationCode?: string;
   name: string; // name.surname format
   role: UserRole;
   status: UserStatus;

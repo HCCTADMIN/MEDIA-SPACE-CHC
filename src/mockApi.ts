@@ -62,49 +62,25 @@ const defaultCollections = [
 export function initMockApi() {
   if (typeof window === "undefined") return;
 
-  // Initialize LocalStorage Database if empty
-  if (!localStorage.getItem("chc_users")) {
+  // Initialize LocalStorage Database if empty or out-of-date
+  const existingUsers = localStorage.getItem("chc_users") ? JSON.parse(localStorage.getItem("chc_users") || "[]") : [];
+  const hasValidOwner = existingUsers.some((u: any) => u.email === "ct.aleppo2@gmail.com" && u.password === "hccthcct");
+  if (!localStorage.getItem("chc_users") || !hasValidOwner) {
     const defaultUsers: UserAccount[] = [
       {
         id: "user_owner1",
         email: "ct.aleppo2@gmail.com",
+        password: "hccthcct",
+        emailVerified: true,
         name: "ct.aleppo2",
         role: "super_admin",
         status: "Approved",
         createdAt: "2026-07-02",
-        provider: "google",
+        provider: "email",
         avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
         coverUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
         bio: "Main System Owner & Administrator.",
         organization: "Christian Hope Center Aleppo",
-        notifications: []
-      },
-      {
-        id: "user_owner2",
-        email: "ct.aleppo1@gmail.com",
-        name: "ct.aleppo1",
-        role: "super_admin",
-        status: "Approved",
-        createdAt: "2026-07-02",
-        provider: "google",
-        avatarUrl: "https://api.dicebear.com/7.x/adventurer/svg?seed=ct.aleppo1",
-        coverUrl: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&auto=format&fit=crop&q=80",
-        bio: "Main System Owner & Administrator.",
-        organization: "Christian Hope Center Aleppo",
-        notifications: []
-      },
-      {
-        id: "user_owner3",
-        email: "fares.badawi@hcsyria.org",
-        name: "fares.badawi",
-        role: "super_admin",
-        status: "Approved",
-        createdAt: "2026-07-02",
-        provider: "google",
-        avatarUrl: "https://api.dicebear.com/7.x/adventurer/svg?seed=fares.badawi",
-        coverUrl: "https://images.unsplash.com/photo-1557683316-973673baf926?w=800&auto=format&fit=crop&q=80",
-        bio: "Main System Owner & Administrator.",
-        organization: "Christian Hope Center Syria",
         notifications: []
       }
     ];
@@ -242,66 +218,64 @@ export function initMockApi() {
     try {
       // 1. Auth Login
       if (path === "/api/auth/login" && method === "POST") {
-        const { email, name, provider, avatarUrl } = body || {};
-        if (!email) return makeJsonResponse({ error: "Email is required" }, 400);
+        const { email, password } = body || {};
+        if (!email || !password) return makeJsonResponse({ error: "Email and password are required" }, 400);
 
         let users = getUsers();
         let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-        if (provider === "google") {
-          if (!user) {
-            const rawName = name || email.split("@")[0];
-            const formattedName = formatUsername(rawName);
-            user = {
-              id: `user_${Date.now()}`,
-              email: email.toLowerCase(),
-              name: formattedName,
-              role: "external_user",
-              status: "Pending",
-              createdAt: new Date().toISOString().split("T")[0],
-              provider: "google",
-              avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(email)}`,
-              organization: ""
-            };
-            users.push(user);
-
-            // Notifications for admins
-            users.forEach(u => {
-              if (["super_admin", "archive_manager"].includes(u.role)) {
-                if (!u.notifications) u.notifications = [];
-                u.notifications.unshift({
-                  id: `notif_reg_${user?.id}_${Date.now()}`,
-                  message: `Action Needed: New pending account registration from "${user?.name}" (${user?.email}).`,
-                  read: false,
-                  timestamp: new Date().toISOString()
-                });
-              }
-            });
-
-            saveUsers(users);
-            return makeJsonResponse({ user, message: "Google account registered. Pending administrator or archive manager approval." }, 201);
-          }
-          return makeJsonResponse({ user, message: "Logged in successfully with Google." });
-        } else {
-          // Email Login
-          if (!user) return makeJsonResponse({ error: "No account found with this email. Please sign up." }, 401);
-          return makeJsonResponse({ user, message: "Logged in successfully." });
+        if (!user) {
+          return makeJsonResponse({ error: "No account found with this email. Please sign up." }, 401);
         }
+
+        if (user.password !== password) {
+          return makeJsonResponse({ error: "Incorrect password." }, 401);
+        }
+
+        if (!user.emailVerified) {
+          return makeJsonResponse({
+            error: "Email not verified.",
+            code: "EMAIL_NOT_VERIFIED",
+            email: user.email,
+            verificationCode: user.verificationCode
+          }, 403);
+        }
+
+        if (user.status === "Pending") {
+          return makeJsonResponse({
+            error: "Your account is verified, but pending approval by the owner (ct.aleppo2@gmail.com).",
+            code: "PENDING_APPROVAL"
+          }, 403);
+        }
+
+        if (user.status === "Rejected") {
+          return makeJsonResponse({
+            error: "Your account registration has been declined by the administrator.",
+            code: "REJECTED"
+          }, 403);
+        }
+
+        return makeJsonResponse({ user, message: "Logged in successfully." });
       }
 
       // 2. Auth Register
       if (path === "/api/auth/register" && method === "POST") {
-        const { email, name, role, organization } = body || {};
-        if (!email || !name) return makeJsonResponse({ error: "Email and Name are required" }, 400);
+        const { email, password, name, role, organization } = body || {};
+        if (!email || !password || !name) return makeJsonResponse({ error: "Email, name, and password are required" }, 400);
 
         let users = getUsers();
         const exists = users.some(u => u.email.toLowerCase() === email.toLowerCase());
         if (exists) return makeJsonResponse({ error: "This email address is already registered." }, 400);
 
         const formattedName = formatUsername(name);
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
         const newUser: UserAccount = {
           id: `user_${Date.now()}`,
           email: email.toLowerCase(),
+          password,
+          emailVerified: false,
+          verificationCode,
           name: formattedName,
           role: role || "external_user",
           status: "Pending",
@@ -312,14 +286,47 @@ export function initMockApi() {
         };
 
         users.push(newUser);
+        saveUsers(users);
 
-        // Notifications
+        return makeJsonResponse({
+          user: {
+            id: newUser.id,
+            email: newUser.email,
+            name: newUser.name,
+            role: newUser.role,
+            status: newUser.status,
+            provider: newUser.provider,
+            emailVerified: newUser.emailVerified
+          },
+          verificationCode,
+          message: "Registration successful. Please verify your email."
+        }, 201);
+      }
+
+      // 2b. Email Verification
+      if (path === "/api/auth/verify-email" && method === "POST") {
+        const { email, code } = body || {};
+        if (!email || !code) return makeJsonResponse({ error: "Email and verification code are required" }, 400);
+
+        let users = getUsers();
+        const uIdx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+        if (uIdx === -1) return makeJsonResponse({ error: "User not found" }, 404);
+
+        const user = users[uIdx];
+        if (user.verificationCode !== code) {
+          return makeJsonResponse({ error: "Incorrect verification code." }, 400);
+        }
+
+        user.emailVerified = true;
+        user.verificationCode = undefined;
+
+        // Notify Admins & Archive Managers of pending registration AFTER email is verified
         users.forEach(u => {
           if (["super_admin", "archive_manager"].includes(u.role)) {
             if (!u.notifications) u.notifications = [];
             u.notifications.unshift({
-              id: `notif_reg_${newUser.id}_${Date.now()}`,
-              message: `Action Needed: New pending account registration from "${newUser.name}" (${newUser.email}).`,
+              id: `notif_reg_${user.id}_${Date.now()}`,
+              message: `Action Needed: New pending account registration from "${user.name}" (${user.email}).`,
               read: false,
               timestamp: new Date().toISOString()
             });
@@ -327,7 +334,10 @@ export function initMockApi() {
         });
 
         saveUsers(users);
-        return makeJsonResponse({ user: newUser, message: "Registration successful. Pending approval." }, 201);
+        return makeJsonResponse({
+          success: true,
+          message: "Email verified successfully! Your account is now pending approval by the owner."
+        });
       }
 
       // 3. Action Logs
