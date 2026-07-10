@@ -29,7 +29,8 @@ const defaultCollections = [
 export function initMockApi() {
   if (typeof window === "undefined") return;
 
-  // Always force-clean user accounts to only contain the owner, to remove other registered demo/sandbox users
+  // Perform a one-time clean sweep for the user requests to remove all demo users/photographers/photos.
+  // Using a versioned flag ensures that future page loads or state initializations do not wipe out newly registered users, photographers, or uploaded photos.
   const defaultUsers: UserAccount[] = [
     {
       id: "user_owner1",
@@ -48,13 +49,26 @@ export function initMockApi() {
       notifications: []
     }
   ];
-  localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
 
-  // Initialize LocalStorage with no demo photos
-  localStorage.setItem("chc_photos", JSON.stringify([]));
+  const hasBeenCleaned = localStorage.getItem("chc_cleaned_v3") === "true";
 
-  // Initialize LocalStorage with no photographers
-  localStorage.setItem("chc_photographers", JSON.stringify([]));
+  if (!hasBeenCleaned) {
+    localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
+    localStorage.setItem("chc_photos", JSON.stringify([]));
+    localStorage.setItem("chc_photographers", JSON.stringify([]));
+    localStorage.setItem("chc_cleaned_v3", "true");
+  } else {
+    // Standard non-destructive initializations
+    if (!localStorage.getItem("chc_users")) {
+      localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
+    }
+    if (!localStorage.getItem("chc_photos")) {
+      localStorage.setItem("chc_photos", JSON.stringify([]));
+    }
+    if (!localStorage.getItem("chc_photographers")) {
+      localStorage.setItem("chc_photographers", JSON.stringify([]));
+    }
+  }
 
   if (!localStorage.getItem("chc_collections")) {
     localStorage.setItem("chc_collections", JSON.stringify(defaultCollections));
