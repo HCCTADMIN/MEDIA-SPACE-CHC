@@ -191,7 +191,13 @@ function loadDb() {
         const data = JSON.parse(content);
         if (data.appSettings) appSettings = data.appSettings;
         if (data.photosCollection) photosCollection = data.photosCollection;
-        if (data.usersCollection) usersCollection = data.usersCollection;
+        if (data.usersCollection) {
+          usersCollection = data.usersCollection;
+          // Ensure all users are marked as emailVerified to avoid code verification screens
+          usersCollection.forEach((u: any) => {
+            u.emailVerified = true;
+          });
+        }
         if (data.photographersCollection) photographersCollection = data.photographersCollection;
         if (data.deletedUsersLog) deletedUsersLog = data.deletedUsersLog;
         if (data.fullResRequests) fullResRequests = data.fullResRequests;
@@ -216,6 +222,48 @@ const PORT = 3000;
 
 // Body parser
 app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Setup local uploads folder for static storage of user-uploaded images
+const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// Helper to extract base64 images, save to disk, and return local static asset URLs
+function saveBase64Image(url: string, id: string): string {
+  if (!url || !url.startsWith("data:")) {
+    return url; // Return as-is if it's already a URL or empty
+  }
+
+  try {
+    const matches = url.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return url;
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    
+    // Detect file extension
+    let ext = "jpg";
+    if (mimeType.includes("png")) ext = "png";
+    else if (mimeType.includes("webp")) ext = "webp";
+    else if (mimeType.includes("gif")) ext = "gif";
+
+    const filename = `${id}.${ext}`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    
+    fs.writeFileSync(filepath, Buffer.from(base64Data, "base64"));
+    console.log(`[UPLOADS] Successfully saved base64 image asset to disk: ${filepath}`);
+    
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error("[UPLOADS] Critical failure saving base64 image to disk:", err);
+    return url; // fallback to base64 string if file-write fails
+  }
+}
 
 // Lazy initializer for GoogleGenAI
 let geminiClient: GoogleGenAI | null = null;
@@ -262,55 +310,9 @@ app.post("/api/auth/login", async (req, res) => {
       return;
     }
 
-    if (!user.emailVerified) {
-      const code = user.verificationCode || Math.floor(100000 + Math.random() * 900000).toString();
-      user.verificationCode = code;
-      saveDb();
-
-      // Trigger actual verification email send
-      const text = `Hi ${user.name},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${code}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
-      const html = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1f2937;">
-  <div style="text-align: center; margin-bottom: 24px;">
-    <h2 style="color: #be1f24; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px;">CHRISTIAN HOPE CENTER</h2>
-    <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #6b7280;">Media Space Archive</p>
-  </div>
-  <div style="background-color: #f9fafb; border-radius: 8px; padding: 24px; border: 1px solid #f3f4f6; margin-bottom: 20px;">
-    <h3 style="margin-top: 0; font-size: 18px; color: #111827;">Verify Your Email Address</h3>
-    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Hi <strong>${user.name}</strong>,</p>
-    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Thank you for registering. Your verification code is below. Please enter this code in the verification panel to activate your account:</p>
-    <div style="text-align: center; margin: 28px 0;">
-      <span style="display: inline-block; background-color: #be1f24; color: #ffffff; font-size: 32px; font-weight: 900; letter-spacing: 6px; padding: 12px 36px; border-radius: 8px; font-family: monospace;">${code}</span>
-    </div>
-    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 0;">Once verified, an Archive Manager or Administrator will review your account registration for approval.</p>
-  </div>
-  <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 24px;">© 2026 Christian Hope Center Aleppo. All rights reserved.</p>
-</div>`;
-
-      let emailSent = false;
-      try {
-        emailSent = await sendRealEmail(
-          user.email,
-          "🔑 Verification Code: HCSyria Media Space",
-          html,
-          text
-        );
-      } catch (err) {
-        console.error("Failed to send login unverified email:", err);
-      }
-
-      res.status(403).json({
-        error: "Email not verified.",
-        code: "EMAIL_NOT_VERIFIED",
-        email: user.email,
-        verificationCode: user.verificationCode,
-        emailSent
-      });
-      return;
-    }
-
     if (user.status === "Pending") {
       res.status(403).json({
-        error: "Your account is verified, but pending approval by the owner (ct.aleppo2@gmail.com).",
+        error: "Your account is registered but pending approval by the owner (ct.aleppo2@gmail.com).",
         code: "PENDING_APPROVAL"
       });
       return;
@@ -352,8 +354,7 @@ app.post("/api/auth/register", async (req, res) => {
       id: `user_${Date.now()}`,
       email: email.toLowerCase(),
       password,
-      emailVerified: false,
-      verificationCode,
+      emailVerified: true,
       name: formattedName,
       role: (role as UserRole) || "external_user",
       status: "Pending", // Needs admin or archive manager approval
@@ -364,38 +365,21 @@ app.post("/api/auth/register", async (req, res) => {
     };
 
     usersCollection.push(newUser);
+
+    // Notify Admins & Archive Managers of pending registration immediately
+    usersCollection.forEach((u) => {
+      if (["super_admin", "archive_manager"].includes(u.role)) {
+        if (!u.notifications) u.notifications = [];
+        u.notifications.unshift({
+          id: `notif_reg_${newUser.id}_${Date.now()}`,
+          message: `Action Needed: New pending account registration from "${newUser.name}" (${newUser.email}).`,
+          read: false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
     saveDb();
-
-    // Trigger actual verification email send
-    const text = `Hi ${formattedName},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${verificationCode}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
-    const html = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1f2937;">
-  <div style="text-align: center; margin-bottom: 24px;">
-    <h2 style="color: #be1f24; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px;">CHRISTIAN HOPE CENTER</h2>
-    <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #6b7280;">Media Space Archive</p>
-  </div>
-  <div style="background-color: #f9fafb; border-radius: 8px; padding: 24px; border: 1px solid #f3f4f6; margin-bottom: 20px;">
-    <h3 style="margin-top: 0; font-size: 18px; color: #111827;">Verify Your Email Address</h3>
-    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Hi <strong>${formattedName}</strong>,</p>
-    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Thank you for registering. Your verification code is below. Please enter this code in the verification panel to activate your account:</p>
-    <div style="text-align: center; margin: 28px 0;">
-      <span style="display: inline-block; background-color: #be1f24; color: #ffffff; font-size: 32px; font-weight: 900; letter-spacing: 6px; padding: 12px 36px; border-radius: 8px; font-family: monospace;">${verificationCode}</span>
-    </div>
-    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 0;">Once verified, an Archive Manager or Administrator will review your account registration for approval.</p>
-  </div>
-  <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 24px;">© 2026 Christian Hope Center Aleppo. All rights reserved.</p>
-</div>`;
-
-    let emailSent = false;
-    try {
-      emailSent = await sendRealEmail(
-        newUser.email,
-        "🔑 Verification Code: HCSyria Media Space",
-        html,
-        text
-      );
-    } catch (err) {
-      console.error("Failed to send registration verification email:", err);
-    }
 
     res.status(201).json({
       user: {
@@ -407,9 +391,7 @@ app.post("/api/auth/register", async (req, res) => {
         provider: newUser.provider,
         emailVerified: newUser.emailVerified
       },
-      verificationCode,
-      emailSent,
-      message: "Registration successful. Please verify your email with the verification code."
+      message: "Registration successful! Your account is now pending approval by the administrator."
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -909,6 +891,9 @@ app.post("/api/images", (req, res) => {
       return;
     }
     
+    // Save image payload locally to prevent DB bloat
+    newPhoto.url = saveBase64Image(newPhoto.url, newPhoto.id);
+    
     // Default status to Pending (requires admin approval)
     // and initialize views to 0
     newPhoto.status = newPhoto.status || "Pending";
@@ -966,6 +951,9 @@ app.post("/api/images", (req, res) => {
 
     logAction(savedPhoto.uploadedBy || "anonymous@chcsyria.org", "upload", `Uploaded photo '${savedPhoto.title}' (ID: ${savedPhoto.id})`);
 
+    // Persist changes to disk data store
+    saveDb();
+
     res.json({ success: true, photo: savedPhoto });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -987,6 +975,9 @@ app.post("/api/images/bulk", (req, res) => {
       if (!photo.id || !photo.url || !photo.title) {
         continue; // skip malformed
       }
+
+      // Save base64 payload to local uploads static storage to avoid database bloat
+      photo.url = saveBase64Image(photo.url, photo.id);
 
       photo.status = photo.status || "Pending";
       photo.views = photo.views || 0;
@@ -1046,6 +1037,9 @@ app.post("/api/images/bulk", (req, res) => {
       const uploaderEmail = savedPhotos[0]?.uploadedBy || "anonymous@chcsyria.org";
       logAction(uploaderEmail, "upload", `Uploaded ${savedPhotos.length} photos in bulk`);
     }
+
+    // Persist changes to disk data store
+    saveDb();
 
     res.json({ success: true, count: savedPhotos.length, photos: savedPhotos });
   } catch (error: any) {

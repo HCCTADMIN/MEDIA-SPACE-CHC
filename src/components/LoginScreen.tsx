@@ -140,18 +140,9 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           throw new Error(data.error || "Failed to register account.");
         }
 
-        // Auto-navigate to verify step and add simulated email code
-        setVerificationEmail(email);
-        setStep("verify");
+        setIsSignUp(false);
         setError("");
-        if (data.emailSent) {
-          setInfoMessage("Registration successful! A verification code has been sent to your real email address. Please check your inbox (and spam folder).");
-        } else {
-          setInfoMessage("Registration successful! Real SMTP email delivery is not configured on the server, so we have routed the code to the Sandbox Mailbox widget at the bottom right.");
-        }
-        if (data.verificationCode) {
-          addSimulatedEmail(email, data.verificationCode);
-        }
+        setInfoMessage("Registration successful! Your account has been registered and is now pending approval by the owner (ct.aleppo2@gmail.com). You can sign in once approved.");
       } else {
         // Log in
         const res = await fetch("/api/auth/login", {
