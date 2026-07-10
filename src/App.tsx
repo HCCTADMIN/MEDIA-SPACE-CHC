@@ -236,6 +236,55 @@ export default function App() {
     navigateTo(`/${type}/${slug}`);
   };
 
+  const syncWithBackend = async () => {
+    try {
+      const localUsersJson = localStorage.getItem("chc_users");
+      const localPhotosJson = localStorage.getItem("chc_photos");
+      const localPhotographersJson = localStorage.getItem("chc_photographers");
+      const localRequestsJson = localStorage.getItem("chc_requests");
+      const localLogsJson = localStorage.getItem("chc_logs");
+
+      const localUsers = localUsersJson ? JSON.parse(localUsersJson) : [];
+      const localPhotos = localPhotosJson ? JSON.parse(localPhotosJson) : [];
+      const localPhotographers = localPhotographersJson ? JSON.parse(localPhotographersJson) : [];
+      const localRequests = localRequestsJson ? JSON.parse(localRequestsJson) : [];
+      const localLogs = localLogsJson ? JSON.parse(localLogsJson) : [];
+
+      if (
+        localUsers.length > 0 ||
+        localPhotos.length > 0 ||
+        localPhotographers.length > 0 ||
+        localRequests.length > 0 ||
+        localLogs.length > 0
+      ) {
+        console.log("[SYNC] Local data found. Synchronizing with backend server...");
+        const res = await fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            users: localUsers,
+            photos: localPhotos,
+            photographers: localPhotographers,
+            requests: localRequests,
+            logs: localLogs
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log("[SYNC] Synchronized with backend successfully.", data);
+          if (data.users) localStorage.setItem("chc_users", JSON.stringify(data.users));
+          if (data.photos) localStorage.setItem("chc_photos", JSON.stringify(data.photos));
+          if (data.photographers) localStorage.setItem("chc_photographers", JSON.stringify(data.photographers));
+          if (data.fullResRequests) localStorage.setItem("chc_requests", JSON.stringify(data.fullResRequests));
+          if (data.actionLogs) localStorage.setItem("chc_logs", JSON.stringify(data.actionLogs));
+        }
+      }
+    } catch (err) {
+      console.warn("[SYNC] Connection failed during synchronization, using local fallback:", err);
+    }
+  };
+
   const fetchUsers = async () => {
     try {
       const res = await fetch("/api/users");
@@ -450,11 +499,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchPhotos();
-    fetchCollections();
-    fetchUsers();
-    fetchPhotographers();
-    fetchSettings();
+    const initializeData = async () => {
+      await syncWithBackend();
+      fetchPhotos();
+      fetchCollections();
+      fetchUsers();
+      fetchPhotographers();
+      fetchSettings();
+    };
+    initializeData();
   }, []);
 
   // Sync details dialog photo if updated

@@ -139,6 +139,7 @@ function logAction(userEmail: string, action: "upload" | "delete" | "approve" | 
     timestamp: new Date().toISOString()
   };
   actionLogs.unshift(logEntry);
+  saveDb();
 }
 
 let usersCollection: UserAccount[] = [
@@ -161,6 +162,54 @@ let usersCollection: UserAccount[] = [
 ];
 
 let photographersCollection: any[] = [];
+
+const DB_FILE = path.join(process.cwd(), "data_store.json");
+
+function saveDb() {
+  try {
+    const data = {
+      appSettings,
+      photosCollection,
+      usersCollection,
+      photographersCollection,
+      deletedUsersLog,
+      fullResRequests,
+      actionLogs,
+      collectionsCollection
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[DB] Failed to save data store:", err);
+  }
+}
+
+function loadDb() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const content = fs.readFileSync(DB_FILE, "utf-8");
+      if (content.trim()) {
+        const data = JSON.parse(content);
+        if (data.appSettings) appSettings = data.appSettings;
+        if (data.photosCollection) photosCollection = data.photosCollection;
+        if (data.usersCollection) usersCollection = data.usersCollection;
+        if (data.photographersCollection) photographersCollection = data.photographersCollection;
+        if (data.deletedUsersLog) deletedUsersLog = data.deletedUsersLog;
+        if (data.fullResRequests) fullResRequests = data.fullResRequests;
+        if (data.actionLogs) actionLogs = data.actionLogs;
+        if (data.collectionsCollection) collectionsCollection = data.collectionsCollection;
+        console.log("[DB] Loaded persistent data store successfully.");
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("[DB] Failed to load data store, using defaults:", err);
+  }
+  // If file doesn't exist or is invalid, create it with initial data
+  saveDb();
+}
+
+// Load database immediately on server startup
+loadDb();
 
 const app = express();
 const PORT = 3000;
@@ -216,6 +265,7 @@ app.post("/api/auth/login", async (req, res) => {
     if (!user.emailVerified) {
       const code = user.verificationCode || Math.floor(100000 + Math.random() * 900000).toString();
       user.verificationCode = code;
+      saveDb();
 
       // Trigger actual verification email send
       const text = `Hi ${user.name},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${code}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
@@ -314,6 +364,7 @@ app.post("/api/auth/register", async (req, res) => {
     };
 
     usersCollection.push(newUser);
+    saveDb();
 
     // Trigger actual verification email send
     const text = `Hi ${formattedName},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${verificationCode}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
@@ -401,9 +452,106 @@ app.post("/api/auth/verify-email", (req, res) => {
       }
     });
 
+    saveDb();
+
     res.json({
       success: true,
       message: "Email verified successfully! Your account is now pending approval by the owner."
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync endpoint to merge client-side localStorage state with server-side database
+app.post("/api/sync", (req, res) => {
+  try {
+    const { users: localUsers, photos: localPhotos, photographers: localPhotographers, requests: localRequests, logs: localLogs } = req.body;
+    let modified = false;
+
+    // 1. Sync users
+    if (Array.isArray(localUsers)) {
+      localUsers.forEach((u: any) => {
+        if (!u || !u.email) return;
+        const existing = usersCollection.find(x => x.email.toLowerCase() === u.email.toLowerCase());
+        if (!existing) {
+          usersCollection.push(u);
+          modified = true;
+        } else {
+          // If the local user is verified but server is not, or status is different, merge
+          if (u.emailVerified && !existing.emailVerified) {
+            existing.emailVerified = true;
+            existing.verificationCode = undefined;
+            modified = true;
+          }
+          if (u.status !== existing.status && u.status !== "Pending") {
+            // Give preference to approved status
+            existing.status = u.status;
+            modified = true;
+          }
+        }
+      });
+    }
+
+    // 2. Sync photographers
+    if (Array.isArray(localPhotographers)) {
+      localPhotographers.forEach((p: any) => {
+        if (!p || !p.id) return;
+        const exists = photographersCollection.some(x => x.id === p.id) || usersCollection.some(u => u.isPhotographer && `usr_${u.id}` === p.id);
+        if (!exists && !p.id.startsWith("usr_")) {
+          photographersCollection.push(p);
+          modified = true;
+        }
+      });
+    }
+
+    // 3. Sync photos
+    if (Array.isArray(localPhotos)) {
+      localPhotos.forEach((p: any) => {
+        if (!p || !p.id) return;
+        const exists = photosCollection.some(x => x.id === p.id);
+        if (!exists) {
+          photosCollection.push(p);
+          modified = true;
+        }
+      });
+    }
+
+    // 4. Sync fullres requests
+    if (Array.isArray(localRequests)) {
+      localRequests.forEach((r: any) => {
+        if (!r || !r.id) return;
+        const exists = fullResRequests.some(x => x.id === r.id);
+        if (!exists) {
+          fullResRequests.push(r);
+          modified = true;
+        }
+      });
+    }
+
+    // 5. Sync action logs
+    if (Array.isArray(localLogs)) {
+      localLogs.forEach((l: any) => {
+        if (!l || !l.id) return;
+        const exists = actionLogs.some(x => x.id === l.id);
+        if (!exists) {
+          actionLogs.push(l);
+          modified = true;
+        }
+      });
+    }
+
+    if (modified) {
+      saveDb();
+    }
+
+    res.json({
+      success: true,
+      users: usersCollection,
+      photos: photosCollection,
+      photographers: photographersCollection,
+      fullResRequests,
+      actionLogs
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -470,6 +618,7 @@ app.put("/api/users/:id", (req, res) => {
       }
     }
 
+    saveDb();
     res.json({ success: true, user: usersCollection[index] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -491,6 +640,7 @@ app.delete("/api/users/:id", (req, res) => {
     deletedUsersLog.push(removedUser);
     
     usersCollection.splice(index, 1);
+    saveDb();
     res.json({ success: true, removed: removedUser, logSize: deletedUsersLog.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -554,6 +704,7 @@ app.post("/api/collections", (req, res) => {
     }
     const newCol = { name: trimmedName, description: description || "Custom user collection." };
     collectionsCollection.push(newCol);
+    saveDb();
     res.json({ success: true, collection: newCol });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -630,6 +781,7 @@ app.post("/api/photographers", (req, res) => {
     };
 
     photographersCollection.push(newPh);
+    saveDb();
     res.status(201).json({ success: true, photographer: newPh });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -648,6 +800,7 @@ app.put("/api/photographers/:id", (req, res) => {
         if (bio !== undefined) usersCollection[uIndex].bio = bio;
         if (avatarUrl !== undefined) usersCollection[uIndex].avatarUrl = avatarUrl;
         if (coverUrl !== undefined) usersCollection[uIndex].coverUrl = coverUrl;
+        saveDb();
         res.json({ success: true, photographer: { id, name: usersCollection[uIndex].name } });
         return;
       }
@@ -677,6 +830,7 @@ app.put("/api/photographers/:id", (req, res) => {
       (photographersCollection[index] as any).status = status;
     }
 
+    saveDb();
     res.json({ success: true, photographer: photographersCollection[index] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -692,6 +846,7 @@ app.delete("/api/photographers/:id", (req, res) => {
       const uIndex = usersCollection.findIndex(u => u.id === realUserId);
       if (uIndex !== -1) {
         usersCollection[uIndex].isPhotographer = false;
+        saveDb();
         res.json({ success: true, removed: { id, name: usersCollection[uIndex].name } });
         return;
       }
@@ -704,6 +859,7 @@ app.delete("/api/photographers/:id", (req, res) => {
     }
 
     const removed = photographersCollection.splice(index, 1)[0];
+    saveDb();
     res.json({ success: true, removed });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -728,6 +884,7 @@ app.put("/api/settings", (req, res) => {
     if (typeof embedCode === "string") {
       appSettings.embedCode = embedCode;
     }
+    saveDb();
     res.json({ success: true, settings: appSettings });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -907,6 +1064,7 @@ app.post("/api/images/:id/view", (req, res) => {
     }
     const photo = photosCollection[index];
     photo.views = (photo.views || 0) + 1;
+    saveDb();
     res.json({ success: true, views: photo.views });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -924,6 +1082,7 @@ app.post("/api/images/:id/download", (req, res) => {
     }
     const photo = photosCollection[index];
     photo.downloads = (photo.downloads || 0) + 1;
+    saveDb();
     res.json({ success: true, downloads: photo.downloads });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1066,6 +1225,7 @@ app.post("/api/images/:id/react", (req, res) => {
       photo.reactions[rKey] = (photo.reactions[rKey] || 0) + 1;
     }
     
+    saveDb();
     res.json({ success: true, reactions: photo.reactions, userReactions: photo.userReactions });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1094,6 +1254,7 @@ app.put("/api/users/:id/profile", (req, res) => {
       user.name = formatUsername(name);
     }
 
+    saveDb();
     res.json({ success: true, user });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1123,6 +1284,7 @@ app.post("/api/users/:id/notifications/read", (req, res) => {
       }
     }
 
+    saveDb();
     res.json({ success: true, user });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1176,6 +1338,7 @@ app.put("/api/images/:id", (req, res) => {
       return;
     }
     photosCollection[index] = { ...photosCollection[index], ...updatedFields };
+    saveDb();
     res.json({ success: true, photo: photosCollection[index] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1196,6 +1359,7 @@ app.delete("/api/images/:id", (req, res) => {
     logAction(adminEmail, "delete", `Deleted photo '${removedPhoto.title}' (ID: ${id}) from catalog`);
 
     const removed = photosCollection.splice(index, 1);
+    saveDb();
     res.json({ success: true, removed: removed[0] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1213,6 +1377,7 @@ app.post("/api/images/:id/privacy", (req, res) => {
       return;
     }
     photosCollection[index].isPublic = !!isPublic;
+    saveDb();
     res.json({ success: true, photo: photosCollection[index] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1266,6 +1431,7 @@ app.post("/api/requests/fullres", (req, res) => {
       }
     });
     
+    saveDb();
     res.json({ success: true, request });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1314,6 +1480,7 @@ app.post("/api/requests/fullres/:id/approve", (req, res) => {
       });
     }
     
+    saveDb();
     res.json({ success: true, request: requestItem });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1345,6 +1512,7 @@ app.post("/api/requests/fullres/:id/reject", (req, res) => {
       });
     }
     
+    saveDb();
     res.json({ success: true, request: requestItem });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1378,6 +1546,7 @@ app.post("/api/images/reset", (req, res) => {
         focalLength: p.cameraSettings.focalLength || (p.cameraSettings.lens.match(/\d+mm/)?.[0] || "50mm")
       }
     }));
+    saveDb();
     res.json({ success: true, photos: photosCollection });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
