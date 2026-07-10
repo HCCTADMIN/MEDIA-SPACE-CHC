@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { Mail, User, ShieldAlert, Loader2, Sparkles, CheckCircle, ChevronRight, Lock, HelpCircle, Briefcase, Eye } from "lucide-react";
+import { Mail, User, ShieldAlert, Loader2, Sparkles, CheckCircle, ChevronRight, Lock, HelpCircle, Briefcase, Eye, Inbox, X } from "lucide-react";
 import { UserAccount, UserRole } from "../types";
 
 interface LoginScreenProps {
   onLoginSuccess: (user: UserAccount) => void;
+}
+
+interface SimulatedEmail {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  code: string;
+  timestamp: string;
+  read: boolean;
 }
 
 export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
@@ -32,7 +42,34 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [step, setStep] = useState<"login" | "verify">("login");
   const [verificationEmail, setVerificationEmail] = useState("");
   const [verificationCodeInput, setVerificationCodeInput] = useState("");
-  const [simulatedCode, setSimulatedCode] = useState("");
+
+  // Simulated mailbox state
+  const [simulatedEmails, setSimulatedEmails] = useState<SimulatedEmail[]>(() => {
+    const saved = localStorage.getItem("chc_simulated_emails");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isMailboxOpen, setIsMailboxOpen] = useState(false);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("chc_simulated_emails", JSON.stringify(simulatedEmails));
+  }, [simulatedEmails]);
+
+  const addSimulatedEmail = (toEmail: string, code: string) => {
+    if (!code) return;
+    const newMail: SimulatedEmail = {
+      id: `mail_${Date.now()}`,
+      to: toEmail,
+      subject: "🔑 CHC Archive Verification Code",
+      body: `Hi there,\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour account is almost ready. Please use the following 6-digit code to verify your email address:\n\nVerification Code: ${code}\n\nOnce verified, an Archive Manager or Administrator will review your account registration.\n\nBest regards,\nChristian Hope Center Admin`,
+      code,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      read: false
+    };
+    setSimulatedEmails((prev) => [newMail, ...prev]);
+    setIsMailboxOpen(true);
+    setSelectedEmailId(newMail.id);
+  };
 
   // Dynamic public cover background
   const [coverUrl, setCoverUrl] = useState<string>("");
@@ -103,12 +140,14 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           throw new Error(data.error || "Failed to register account.");
         }
 
-        // Auto-navigate to verify step and show simulated code
+        // Auto-navigate to verify step and add simulated email code
         setVerificationEmail(email);
-        setSimulatedCode(data.verificationCode || "");
         setStep("verify");
         setError("");
-        setInfoMessage("Registration successful! We have simulated sending a verification email below. Please enter the 6-digit code to verify your email address.");
+        setInfoMessage("Registration successful! A simulated verification email has been sent to your inbox. Check the Sandbox Mail widget at the bottom right.");
+        if (data.verificationCode) {
+          addSimulatedEmail(email, data.verificationCode);
+        }
       } else {
         // Log in
         const res = await fetch("/api/auth/login", {
@@ -122,9 +161,11 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           // If unverified email, allow verifying immediately
           if (data.code === "EMAIL_NOT_VERIFIED") {
             setVerificationEmail(data.email || email);
-            setSimulatedCode(data.verificationCode || "");
             setStep("verify");
-            setError("Email is not verified yet. Please enter the 6-digit verification code below.");
+            setError("Email is not verified yet. A simulated verification email has been sent to your inbox. Check the Sandbox Mail widget at the bottom right.");
+            if (data.verificationCode) {
+              addSimulatedEmail(data.email || email, data.verificationCode);
+            }
             return;
           }
           throw new Error(data.error || "Login failed.");
@@ -165,45 +206,10 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       setStep("login");
       setIsSignUp(false);
       setVerificationCodeInput("");
-      setSimulatedCode("");
       setError("");
       setInfoMessage("Email address verified successfully! Your account is now pending approval by the owner (ct.aleppo2@gmail.com). You can sign in once approved.");
     } catch (err: any) {
       setError(err.message || "An error occurred during verification.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleOwnerAccessDirect = async () => {
-    setError("");
-    setInfoMessage("");
-    setIsLoading(true);
-    setStep("login");
-    setIsSignUp(false);
-    
-    // Fill credentials
-    setEmail("ct.aleppo2@gmail.com");
-    setPassword("hccthcct");
-
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: "ct.aleppo2@gmail.com",
-          password: "hccthcct"
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to log in as owner.");
-      }
-
-      onLoginSuccess(data.user);
-    } catch (err: any) {
-      setError(err.message || "An error occurred during owner access.");
     } finally {
       setIsLoading(false);
     }
@@ -304,7 +310,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               
               {isSignUp && (
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">Full NameLabel</label>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">Full Name</label>
                   <div className="relative">
                     <User className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 dark:text-zinc-500" />
                     <input
@@ -412,18 +418,6 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               </p>
             </div>
 
-            {/* Simulated Email Box */}
-            {simulatedCode && (
-              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-xl p-3.5 text-xs text-blue-900 dark:text-blue-200 flex flex-col gap-1.5 font-mono shadow-xs">
-                <span className="font-bold text-[10px] tracking-wider uppercase text-blue-800 dark:text-blue-300">📧 Sandbox Email Simulator</span>
-                <div className="text-[11px]">
-                  Subject: <span className="underline">CHC Verification Code</span>
-                  <br />
-                  Code: <strong className="text-sm text-[#be1f24] bg-white dark:bg-zinc-900 px-2 py-0.5 rounded-md border border-gray-150 dark:border-zinc-800">{simulatedCode}</strong>
-                </div>
-              </div>
-            )}
-
             {/* Alert Logs */}
             {error && (
               <div className="bg-white dark:bg-zinc-900 border border-[#be1f24] text-xs text-gray-800 dark:text-zinc-200 px-4 py-3 rounded-xl flex items-start gap-2.5 shadow-3xs">
@@ -491,20 +485,145 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </p>
         </div>
 
-        {/* Demo Helper box */}
-        <div className="border-t border-gray-100 dark:border-zinc-900 pt-5 mt-1 flex flex-col gap-2.5">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-semibold block text-center">
-            Quick Sandbox Access
-          </span>
-          <button
-            type="button"
-            onClick={handleOwnerAccessDirect}
-            className="w-full px-2.5 py-1.5 border border-[#be1f24]/20 bg-neutral-50 dark:bg-zinc-900 hover:bg-neutral-100 dark:hover:bg-zinc-800 text-center text-[10px] font-bold text-[#be1f24] rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5"
-          >
-            👑 Enter as System Owner (ct.aleppo2)
-          </button>
-        </div>
+      </div>
 
+      {/* Floating Sandbox Mailbox Simulator Widget */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+        {/* Mailbox toggle button */}
+        <button
+          type="button"
+          onClick={() => {
+            setIsMailboxOpen(!isMailboxOpen);
+          }}
+          className="relative flex items-center gap-2 bg-[#be1f24] hover:bg-[#a1161a] active:scale-95 text-white font-sans text-xs font-black px-4 py-3 rounded-full shadow-lg transition-all border border-[#be1f24]/20 cursor-pointer"
+        >
+          <Inbox className="w-4 h-4 animate-pulse" />
+          <span>📧 Sandbox Mailbox</span>
+          
+          {/* Notification badge */}
+          {simulatedEmails.filter(m => !m.read).length > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 bg-yellow-500 text-neutral-950 font-black text-[9px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-950 animate-bounce">
+              {simulatedEmails.filter(m => !m.read).length}
+            </span>
+          )}
+        </button>
+
+        {/* Mailbox Drawer / Popover */}
+        {isMailboxOpen && (
+          <div className="w-80 md:w-96 h-96 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-2xl mt-3 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+            {/* Header */}
+            <div className="bg-[#be1f24] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Inbox className="w-4 h-4" />
+                <span className="text-xs font-black tracking-wider uppercase">Sandbox Mail Inboxes</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMailboxOpen(false)}
+                className="text-white/80 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content area split: List vs Detail */}
+            <div className="flex-1 overflow-y-auto flex flex-col">
+              {selectedEmailId ? (
+                /* Email Detail View */
+                (() => {
+                  const email = simulatedEmails.find(m => m.id === selectedEmailId);
+                  if (!email) return null;
+                  return (
+                    <div className="p-4 flex flex-col gap-3 h-full">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailId(null)}
+                        className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 text-left cursor-pointer mb-1 underline"
+                      >
+                        ← Back to Inbox
+                      </button>
+                      <div className="border-b border-gray-100 dark:border-zinc-800 pb-2 flex flex-col gap-1">
+                        <div className="text-[10px] font-mono text-gray-550">
+                          <strong>To:</strong> {email.to}
+                        </div>
+                        <div className="text-[10px] font-mono text-gray-555">
+                          <strong>Time:</strong> {email.timestamp}
+                        </div>
+                        <div className="text-xs font-bold text-gray-900 dark:text-zinc-100">
+                          {email.subject}
+                        </div>
+                      </div>
+                      <div className="flex-1 font-mono text-[11px] text-gray-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed bg-gray-50 dark:bg-zinc-950 p-3 rounded-lg border border-gray-150 dark:border-zinc-900 overflow-y-auto">
+                        {email.body}
+                        
+                        {/* Highlighted verification code */}
+                        <div className="mt-4 p-3 bg-[#be1f24]/10 dark:bg-[#be1f24]/20 border border-[#be1f24]/30 rounded-lg text-center">
+                          <span className="text-[10px] font-bold text-[#be1f24] uppercase block mb-1">Your Verification Code</span>
+                          <span className="text-lg font-black tracking-widest text-[#be1f24]">{email.code}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                /* Email List View */
+                simulatedEmails.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 dark:text-zinc-500">
+                    <Inbox className="w-8 h-8 stroke-1 mb-2 opacity-50" />
+                    <span className="text-xs font-bold">No simulated emails</span>
+                    <p className="text-[10px] max-w-[200px] mt-1 leading-relaxed">
+                      Verification emails for registration or unverified sign-in will show up here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+                    {simulatedEmails.map((mail) => (
+                      <button
+                        key={mail.id}
+                        type="button"
+                        onClick={() => {
+                          // Mark as read
+                          setSimulatedEmails(prev => prev.map(m => m.id === mail.id ? { ...m, read: true } : m));
+                          setSelectedEmailId(mail.id);
+                        }}
+                        className={`w-full text-left p-3.5 flex flex-col gap-1 transition-all hover:bg-gray-50 dark:hover:bg-zinc-800/50 cursor-pointer ${
+                          !mail.read ? "bg-red-50/30 dark:bg-[#be1f24]/5" : ""
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono text-gray-400">
+                          <span className="truncate max-w-[150px]">{mail.to}</span>
+                          <span>{mail.timestamp}</span>
+                        </div>
+                        <div className={`text-xs truncate ${!mail.read ? "font-black text-gray-900 dark:text-white" : "text-gray-600 dark:text-zinc-400"}`}>
+                          {mail.subject}
+                        </div>
+                        <div className="text-[10px] text-gray-400 truncate">
+                          Code: {mail.code} • Click to read email
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+            
+            {/* Clear button footer */}
+            {simulatedEmails.length > 0 && (
+              <div className="bg-gray-50 dark:bg-zinc-950 p-2 border-t border-gray-150 dark:border-zinc-800 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimulatedEmails([]);
+                    setSelectedEmailId(null);
+                  }}
+                  className="text-[10px] font-mono uppercase tracking-wider text-[#be1f24] hover:underline cursor-pointer"
+                >
+                  Clear Mailbox
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
     </div>

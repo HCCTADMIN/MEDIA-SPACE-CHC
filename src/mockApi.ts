@@ -18,40 +18,7 @@ function normalizeName(name: string): string {
 }
 
 // Initial photographers collection
-const defaultPhotographers = [
-  {
-    id: "ph_sarah",
-    name: "Sarah Jenkins",
-    avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80",
-    coverUrl: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&auto=format&fit=crop&q=80",
-    bio: "Focuses on emergency crisis relief, humanitarian aid drops, and community rebuilding programs in the Levant.",
-    joinedDate: "2025-03-12"
-  },
-  {
-    id: "ph_marcus",
-    name: "Marcus Alon",
-    avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80",
-    coverUrl: "https://images.unsplash.com/photo-1472214222541-d510753a49fa?w=800&auto=format&fit=crop&q=80",
-    bio: "Senior photojournalist documenting urban restoration, local craftsmanship, and historical archiving projects in Aleppo.",
-    joinedDate: "2024-08-15"
-  },
-  {
-    id: "ph_kofi",
-    name: "Kofi Mensah",
-    avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80",
-    coverUrl: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&auto=format&fit=crop&q=80",
-    bio: "Documenting community development, youth education programs, and NGO medical response efforts across Syria.",
-    joinedDate: "2025-01-10"
-  },
-  {
-    id: "ph_elena",
-    name: "Dr. Elena Rostova",
-    avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80",
-    coverUrl: "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=800&auto=format&fit=crop&q=80",
-    bio: "Cultural heritage specialist and researcher. Captures structural archeology, post-conflict restoration, and ancient quarters.",
-    joinedDate: "2023-11-05"
-  }
-];
+const defaultPhotographers: any[] = [];
 
 const defaultCollections = [
   { name: "Emergency Relief 2026", description: "Direct response and humanitarian aid actions in early 2026." },
@@ -62,62 +29,32 @@ const defaultCollections = [
 export function initMockApi() {
   if (typeof window === "undefined") return;
 
-  // Initialize LocalStorage Database if empty or out-of-date
-  const existingUsers = localStorage.getItem("chc_users") ? JSON.parse(localStorage.getItem("chc_users") || "[]") : [];
-  const hasValidOwner = existingUsers.some((u: any) => u.email === "ct.aleppo2@gmail.com" && u.password === "hccthcct");
-  if (!localStorage.getItem("chc_users") || !hasValidOwner) {
-    const defaultUsers: UserAccount[] = [
-      {
-        id: "user_owner1",
-        email: "ct.aleppo2@gmail.com",
-        password: "hccthcct",
-        emailVerified: true,
-        name: "ct.aleppo2",
-        role: "super_admin",
-        status: "Approved",
-        createdAt: "2026-07-02",
-        provider: "email",
-        avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
-        coverUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
-        bio: "Main System Owner & Administrator.",
-        organization: "Christian Hope Center Aleppo",
-        notifications: []
-      }
-    ];
-    localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
-  }
+  // Always force-clean user accounts to only contain the owner, to remove other registered demo/sandbox users
+  const defaultUsers: UserAccount[] = [
+    {
+      id: "user_owner1",
+      email: "ct.aleppo2@gmail.com",
+      password: "hccthcct",
+      emailVerified: true,
+      name: "ct.aleppo2",
+      role: "super_admin",
+      status: "Approved",
+      createdAt: "2026-07-02",
+      provider: "email",
+      avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
+      coverUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
+      bio: "Main System Owner & Administrator.",
+      organization: "Christian Hope Center Aleppo",
+      notifications: []
+    }
+  ];
+  localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
 
-  if (!localStorage.getItem("chc_photos")) {
-    const initialPhotosWithStats: Photo[] = initialPhotos.map((p, i) => ({
-      ...p,
-      status: p.status || "Approved",
-      views: p.views || (24 + Math.floor(Math.random() * 180)),
-      downloads: p.downloads || (12 + Math.floor(Math.random() * 60)),
-      city: p.city || p.location.split(",")[0].trim(),
-      timeCreated: p.timeCreated || `${String(9 + (i % 6)).padStart(2, '0')}:${String((i * 12) % 60).padStart(2, '0')}`,
-      dateUploaded: p.dateUploaded || p.dateCreated,
-      isFeatured: p.id === "photo_2",
-      reactions: p.reactions || {
-        like: 8 + (i * 3) % 20,
-        love: 12 + (i * 4) % 25,
-        inspiring: 5 + (i * 2) % 12,
-      },
-      userReactions: {
-        like: [],
-        love: [],
-        inspiring: [],
-      },
-      cameraSettings: {
-        ...p.cameraSettings,
-        focalLength: p.cameraSettings?.focalLength || (p.cameraSettings?.lens?.match(/\d+mm/)?.[0] || "50mm")
-      }
-    }));
-    localStorage.setItem("chc_photos", JSON.stringify(initialPhotosWithStats));
-  }
+  // Initialize LocalStorage with no demo photos
+  localStorage.setItem("chc_photos", JSON.stringify([]));
 
-  if (!localStorage.getItem("chc_photographers")) {
-    localStorage.setItem("chc_photographers", JSON.stringify(defaultPhotographers));
-  }
+  // Initialize LocalStorage with no photographers
+  localStorage.setItem("chc_photographers", JSON.stringify([]));
 
   if (!localStorage.getItem("chc_collections")) {
     localStorage.setItem("chc_collections", JSON.stringify(defaultCollections));
@@ -946,7 +883,7 @@ export function initMockApi() {
     return makeJsonResponse({ error: `Mock API: Path '${path}' [${method}] not matched.` }, 404);
   }
 
-  window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
+  const newFetch = async function (input: RequestInfo | URL, init?: RequestInit) {
     const urlStr = typeof input === "string" ? input : (input instanceof URL ? input.href : input.url);
 
     if (urlStr.includes("/api/")) {
@@ -974,4 +911,19 @@ export function initMockApi() {
 
     return originalFetch(input, init);
   };
+
+  try {
+    Object.defineProperty(window, "fetch", {
+      value: newFetch,
+      configurable: true,
+      writable: true
+    });
+  } catch (e) {
+    console.warn("[MOCK API] Failed to overwrite window.fetch with Object.defineProperty, trying direct assignment...", e);
+    try {
+      window.fetch = newFetch;
+    } catch (err2) {
+      console.error("[MOCK API] Critical: Could not overwrite window.fetch at all.", err2);
+    }
+  }
 }
