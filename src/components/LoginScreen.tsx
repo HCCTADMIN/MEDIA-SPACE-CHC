@@ -144,7 +144,11 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         setVerificationEmail(email);
         setStep("verify");
         setError("");
-        setInfoMessage("Registration successful! A simulated verification email has been sent to your inbox. Check the Sandbox Mail widget at the bottom right.");
+        if (data.emailSent) {
+          setInfoMessage("Registration successful! A verification code has been sent to your real email address. Please check your inbox (and spam folder).");
+        } else {
+          setInfoMessage("Registration successful! Real SMTP email delivery is not configured on the server, so we have routed the code to the Sandbox Mailbox widget at the bottom right.");
+        }
         if (data.verificationCode) {
           addSimulatedEmail(email, data.verificationCode);
         }
@@ -162,7 +166,11 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           if (data.code === "EMAIL_NOT_VERIFIED") {
             setVerificationEmail(data.email || email);
             setStep("verify");
-            setError("Email is not verified yet. A simulated verification email has been sent to your inbox. Check the Sandbox Mail widget at the bottom right.");
+            if (data.emailSent) {
+              setError("Email is not verified yet. A verification code has been sent to your real email address. Please check your inbox (and spam folder).");
+            } else {
+              setError("Email is not verified yet. Real SMTP email delivery is not configured on the server, so we have routed the code to the Sandbox Mailbox widget at the bottom right.");
+            }
             if (data.verificationCode) {
               addSimulatedEmail(data.email || email, data.verificationCode);
             }

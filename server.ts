@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
+import nodemailer from "nodemailer";
 import { initialPhotos } from "./src/data/initialPhotos.js"; // Esbuild will resolve or compile appropriately
 import { Photo, UserAccount, UserRole, UserStatus, FullResRequest } from "./src/types";
 
@@ -51,6 +52,48 @@ function formatUsername(name: string): string {
 // Case, space, underscore, period-insensitive name normalization for deduplication
 function normalizeName(name: string): string {
   return name.trim().toLowerCase().replace(/[\s\-_.]+/g, " ");
+}
+
+async function sendRealEmail(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  const host = process.env.SMTP_HOST;
+  const portStr = process.env.SMTP_PORT || "465";
+  const port = parseInt(portStr, 10);
+  const secure = process.env.SMTP_SECURE === "true" || port === 465;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const fromName = process.env.SMTP_FROM_NAME || "Christian Hope Center Aleppo";
+  const fromEmail = process.env.SMTP_FROM_EMAIL || user;
+
+  if (!host || !user || !pass) {
+    console.warn(`[EMAIL SENDER] SMTP credentials not fully configured (SMTP_HOST, SMTP_USER, or SMTP_PASS is missing). Email to ${to} was not sent via real SMTP.`);
+    return false;
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: {
+        user,
+        pass,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to,
+      subject,
+      text,
+      html,
+    });
+
+    console.log(`[EMAIL SENDER] Successfully sent real email to ${to} regarding "${subject}"`);
+    return true;
+  } catch (error) {
+    console.error(`[EMAIL SENDER] Failed to send real email to ${to}:`, error);
+    return false;
+  }
 }
 
 let deletedUsersLog: UserAccount[] = [];
@@ -150,7 +193,7 @@ function getGeminiClient(): GoogleGenAI {
 // Authentication & Account Management Endpoints
 
 // 1. User Login
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -171,11 +214,46 @@ app.post("/api/auth/login", (req, res) => {
     }
 
     if (!user.emailVerified) {
+      const code = user.verificationCode || Math.floor(100000 + Math.random() * 900000).toString();
+      user.verificationCode = code;
+
+      // Trigger actual verification email send
+      const text = `Hi ${user.name},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${code}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
+      const html = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1f2937;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <h2 style="color: #be1f24; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px;">CHRISTIAN HOPE CENTER</h2>
+    <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #6b7280;">Media Space Archive</p>
+  </div>
+  <div style="background-color: #f9fafb; border-radius: 8px; padding: 24px; border: 1px solid #f3f4f6; margin-bottom: 20px;">
+    <h3 style="margin-top: 0; font-size: 18px; color: #111827;">Verify Your Email Address</h3>
+    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Hi <strong>${user.name}</strong>,</p>
+    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Thank you for registering. Your verification code is below. Please enter this code in the verification panel to activate your account:</p>
+    <div style="text-align: center; margin: 28px 0;">
+      <span style="display: inline-block; background-color: #be1f24; color: #ffffff; font-size: 32px; font-weight: 900; letter-spacing: 6px; padding: 12px 36px; border-radius: 8px; font-family: monospace;">${code}</span>
+    </div>
+    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 0;">Once verified, an Archive Manager or Administrator will review your account registration for approval.</p>
+  </div>
+  <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 24px;">© 2026 Christian Hope Center Aleppo. All rights reserved.</p>
+</div>`;
+
+      let emailSent = false;
+      try {
+        emailSent = await sendRealEmail(
+          user.email,
+          "🔑 Verification Code: HCSyria Media Space",
+          html,
+          text
+        );
+      } catch (err) {
+        console.error("Failed to send login unverified email:", err);
+      }
+
       res.status(403).json({
         error: "Email not verified.",
         code: "EMAIL_NOT_VERIFIED",
         email: user.email,
-        verificationCode: user.verificationCode
+        verificationCode: user.verificationCode,
+        emailSent
       });
       return;
     }
@@ -203,7 +281,7 @@ app.post("/api/auth/login", (req, res) => {
 });
 
 // 2. User Registration (Email-based)
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, name, role, organization } = req.body;
     if (!email || !password || !name) {
@@ -237,6 +315,37 @@ app.post("/api/auth/register", (req, res) => {
 
     usersCollection.push(newUser);
 
+    // Trigger actual verification email send
+    const text = `Hi ${formattedName},\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour 6-digit verification code is: ${verificationCode}\n\nPlease enter this code on the verification screen to activate your account. Once verified, an Admin or Archive Manager will review and approve your account.\n\nBest regards,\nChristian Hope Center Aleppo Admin`;
+    const html = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1f2937;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <h2 style="color: #be1f24; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px;">CHRISTIAN HOPE CENTER</h2>
+    <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #6b7280;">Media Space Archive</p>
+  </div>
+  <div style="background-color: #f9fafb; border-radius: 8px; padding: 24px; border: 1px solid #f3f4f6; margin-bottom: 20px;">
+    <h3 style="margin-top: 0; font-size: 18px; color: #111827;">Verify Your Email Address</h3>
+    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Hi <strong>${formattedName}</strong>,</p>
+    <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">Thank you for registering. Your verification code is below. Please enter this code in the verification panel to activate your account:</p>
+    <div style="text-align: center; margin: 28px 0;">
+      <span style="display: inline-block; background-color: #be1f24; color: #ffffff; font-size: 32px; font-weight: 900; letter-spacing: 6px; padding: 12px 36px; border-radius: 8px; font-family: monospace;">${verificationCode}</span>
+    </div>
+    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 0;">Once verified, an Archive Manager or Administrator will review your account registration for approval.</p>
+  </div>
+  <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 24px;">© 2026 Christian Hope Center Aleppo. All rights reserved.</p>
+</div>`;
+
+    let emailSent = false;
+    try {
+      emailSent = await sendRealEmail(
+        newUser.email,
+        "🔑 Verification Code: HCSyria Media Space",
+        html,
+        text
+      );
+    } catch (err) {
+      console.error("Failed to send registration verification email:", err);
+    }
+
     res.status(201).json({
       user: {
         id: newUser.id,
@@ -248,6 +357,7 @@ app.post("/api/auth/register", (req, res) => {
         emailVerified: newUser.emailVerified
       },
       verificationCode,
+      emailSent,
       message: "Registration successful. Please verify your email with the verification code."
     });
   } catch (error: any) {
