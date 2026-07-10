@@ -163,6 +163,13 @@ let usersCollection: UserAccount[] = [
 
 let photographersCollection: any[] = [];
 
+// Collections database
+let collectionsCollection = [
+  { name: "Emergency Relief 2026", description: "Direct response and humanitarian aid actions in early 2026." },
+  { name: "Children and Education", description: "Fostering hope through schooling, literacy, and child-safe spaces." },
+  { name: "Healthcare Outreach", description: "Mobile clinics, dental checkups, and regional hospital support missions." }
+];
+
 const DB_FILE = path.join(process.cwd(), "data_store.json");
 
 function saveDb() {
@@ -647,12 +654,7 @@ app.get("/api/action-logs", (req, res) => {
   }
 });
 
-// Collections database and routes
-let collectionsCollection = [
-  { name: "Emergency Relief 2026", description: "Direct response and humanitarian aid actions in early 2026." },
-  { name: "Children and Education", description: "Fostering hope through schooling, literacy, and child-safe spaces." },
-  { name: "Healthcare Outreach", description: "Mobile clinics, dental checkups, and regional hospital support missions." }
-];
+// Collections routes
 
 app.get("/api/collections", (req, res) => {
   try {
