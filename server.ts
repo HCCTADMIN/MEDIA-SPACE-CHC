@@ -245,13 +245,21 @@ function saveBase64Image(url: string, id: string): string {
   }
 
   try {
-    const matches = url.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-    if (!matches || matches.length !== 3) {
+    const commaIndex = url.indexOf(",");
+    if (commaIndex === -1) {
       return url;
     }
 
-    const mimeType = matches[1];
-    const base64Data = matches[2];
+    const prefix = url.substring(0, commaIndex);
+    const base64Data = url.substring(commaIndex + 1);
+
+    if (!prefix.includes(";base64")) {
+      return url;
+    }
+
+    // Safely extract MIME type from the short prefix
+    const mimeMatch = prefix.match(/^data:([^;]+)/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
     
     // Detect file extension
     let ext = "jpg";
