@@ -1479,6 +1479,25 @@ app.get("/api/public/cover", (req, res) => {
   try {
     // Find a featured photo or fallback to first photo
     const cover = photosCollection.find(p => p.isFeatured) || photosCollection[0];
+    if (!cover) {
+      return res.json({
+        id: "fallback_cover",
+        url: "https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=1600&auto=format&fit=crop&q=80",
+        title: "Aleppo Citadel",
+        caption: "A magnificent view of the historic Citadel of Aleppo.",
+        location: "Citadel of Aleppo, Syria",
+        photographer: "Archive Collection",
+        dateCreated: "2026-01-01",
+        cameraSettings: {
+          camera: "Unknown",
+          lens: "Unknown",
+          iso: 100,
+          aperture: "f/8",
+          shutterSpeed: "1/250s"
+        },
+        isPublic: true
+      });
+    }
     res.json(cover);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

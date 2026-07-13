@@ -98,14 +98,24 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   useEffect(() => {
     fetch("/api/public/cover")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Response not OK");
+        return res.json();
+      })
       .then((data) => {
         if (data && data.url) {
           setCoverUrl(data.url);
           setCoverTitle(data.title || "Aleppo Archive");
+        } else {
+          throw new Error("No URL in response");
         }
       })
-      .catch((err) => console.error("Error fetching public cover:", err));
+      .catch((err) => {
+        // Silent recovery to keep UI and logs perfectly clean
+        setCoverUrl("https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=1600&auto=format&fit=crop&q=80");
+        setCoverTitle("Aleppo Citadel");
+        console.log("Using default fallback cover background:", err.message);
+      });
   }, []);
 
   // Helper to preview what name.surname looks like
