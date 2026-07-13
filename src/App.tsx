@@ -17,6 +17,22 @@ import { dialogService } from "./lib/dialog";
 import { Photo, UserAccount, Photographer } from "./types";
 import { Loader2, Globe, Heart, Compass, ShieldAlert, ChevronRight, ChevronLeft, SlidersHorizontal, ArrowUpDown, Eye, Search } from "lucide-react";
 
+const DEFAULT_ADMIN_USER: UserAccount = {
+  id: "user_owner1",
+  email: "ct.aleppo2@gmail.com",
+  emailVerified: true,
+  name: "ct.aleppo2",
+  role: "super_admin",
+  status: "Approved",
+  createdAt: "2026-07-02",
+  provider: "email",
+  avatarUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
+  coverUrl: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
+  bio: "Main System Owner & Administrator.",
+  organization: "Christian Hope Center Aleppo",
+  notifications: []
+};
+
 export default function App() {
   // Click prevention ref during vertical drag-reframing
   const preventClickRef = useRef(false);
@@ -24,7 +40,11 @@ export default function App() {
   // User Authentication State
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     const saved = localStorage.getItem("chc_current_user");
-    return saved ? JSON.parse(saved) : null;
+    try {
+      return saved ? JSON.parse(saved) : DEFAULT_ADMIN_USER;
+    } catch (e) {
+      return DEFAULT_ADMIN_USER;
+    }
   });
 
   // View mode simulation state (for admins/owners)
@@ -342,8 +362,8 @@ export default function App() {
   };
 
   const handleSignOut = () => {
-    setCurrentUser(null);
-    localStorage.removeItem("chc_current_user");
+    setCurrentUser(DEFAULT_ADMIN_USER);
+    localStorage.setItem("chc_current_user", JSON.stringify(DEFAULT_ADMIN_USER));
     setIsAdminUsersOpen(false);
   };
 
