@@ -4,6 +4,16 @@ import App from './App.tsx';
 import './index.css';
 import { initMockApi } from './mockApi';
 
+// Self-healing: clear any stale service workers that could be intercepting API requests
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+      console.log("[SW_CLEANUP] Unregistered active service worker:", registration);
+    }
+  });
+}
+
 initMockApi();
 
 createRoot(document.getElementById('root')!).render(

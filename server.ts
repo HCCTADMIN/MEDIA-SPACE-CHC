@@ -231,6 +231,17 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.url} - Status: ${res.statusCode} - Duration: ${Date.now() - start}ms\n`;
+    try {
+      fs.appendFileSync(path.join(process.cwd(), "server_requests.log"), logLine, "utf-8");
+    } catch (e) {}
+  });
+  next();
+});
+
 // Setup local uploads folder for static storage of user-uploaded images
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {

@@ -1,0 +1,62 @@
+{
+  "appSettings": {
+    "linkedInUrl": "https://sy.linkedin.com/company/hcsyria",
+    "embedCode": ""
+  },
+  "photosCollection": [],
+  "usersCollection": [
+    {
+      "id": "user_owner1",
+      "email": "ct.aleppo2@gmail.com",
+      "password": "hccthcct",
+      "emailVerified": true,
+      "name": "ct.aleppo2",
+      "role": "super_admin",
+      "status": "Approved",
+      "createdAt": "2026-07-02",
+      "provider": "email",
+      "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
+      "bio": "Main System Owner & Administrator.",
+      "organization": "Christian Hope Center Aleppo",
+      "notifications": [],
+      "resetCode": "289690",
+      "resetCodeExpires": 1783941078431
+    }
+  ],
+  "photographersCollection": [],
+  "deletedUsersLog": [],
+  "fullResRequests": [],
+  "actionLogs": [
+    {
+      "id": "log_1",
+      "userId": "user_owner1",
+      "userEmail": "ct.aleppo2@gmail.com",
+      "action": "approve",
+      "details": "Approved photo 'Hope in Aleppo Alleyway' (ID: photo_2)",
+      "timestamp": "2026-07-05T10:00:00.000Z"
+    },
+    {
+      "id": "log_2",
+      "userId": "user_owner1",
+      "userEmail": "ct.aleppo2@gmail.com",
+      "action": "new_cover",
+      "details": "Set photo 'Hope in Aleppo Alleyway' (ID: photo_2) as featured cover image",
+      "timestamp": "2026-07-06T14:30:00.000Z"
+    }
+  ],
+  "collectionsCollection": [
+    {
+      "name": "Emergency Relief 2026",
+      "description": "Direct response and humanitarian aid actions in early 2026."
+    },
+    {
+      "name": "Children and Education",
+      "description": "Fostering hope through schooling, literacy, and child-safe spaces."
+    },
+    {
+      "name": "Healthcare Outreach",
+      "description": "Mobile clinics, dental checkups, and regional hospital support missions."
+    }
+  ]
+}
