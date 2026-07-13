@@ -895,23 +895,4 @@ export function initMockApi() {
 
     return makeJsonResponse({ error: `Mock API: Path '${path}' [${method}] not matched.` }, 404);
   }
-
-  const newFetch = async function (input: RequestInfo | URL, init?: RequestInit) {
-    return originalFetch(input, init);
-  };
-
-  try {
-    Object.defineProperty(window, "fetch", {
-      value: newFetch,
-      configurable: true,
-      writable: true
-    });
-  } catch (e) {
-    console.warn("[MOCK API] Failed to overwrite window.fetch with Object.defineProperty, trying direct assignment...", e);
-    try {
-      window.fetch = newFetch;
-    } catch (err2) {
-      console.error("[MOCK API] Critical: Could not overwrite window.fetch at all.", err2);
-    }
-  }
 }
