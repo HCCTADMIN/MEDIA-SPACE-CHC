@@ -460,6 +460,81 @@ app.post("/api/auth/verify-email", (req, res) => {
   }
 });
 
+// Forgot Password - requests a 6-digit verification reset code
+app.post("/api/auth/forgot-password", (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: "Email address is required." });
+      return;
+    }
+
+    const user = usersCollection.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      res.status(404).json({ error: "No account found with this email address. Please sign up." });
+      return;
+    }
+
+    // Generate a 6-digit random code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetCode = resetCode;
+    user.resetCodeExpires = Date.now() + 15 * 60 * 1000; // 15 minutes validity
+
+    saveDb();
+
+    // We return the resetCode so the frontend can intercept and simulate the email in Sandbox Mailbox
+    res.json({
+      success: true,
+      message: "A password reset code has been generated. Since real SMTP email delivery is not configured, we have routed the code to the Sandbox Mailbox widget.",
+      resetCode,
+      email: user.email
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset Password - validates code and updates password
+app.post("/api/auth/reset-password", (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      res.status(400).json({ error: "Email, reset code, and new password are required." });
+      return;
+    }
+
+    const user = usersCollection.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      res.status(404).json({ error: "No account found with this email address." });
+      return;
+    }
+
+    if (!user.resetCode || user.resetCode !== code) {
+      res.status(400).json({ error: "Incorrect or invalid password reset code." });
+      return;
+    }
+
+    if (user.resetCodeExpires && Date.now() > user.resetCodeExpires) {
+      res.status(400).json({ error: "The password reset code has expired. Please request a new one." });
+      return;
+    }
+
+    // Update password
+    user.password = newPassword;
+    user.resetCode = undefined;
+    user.resetCodeExpires = undefined;
+
+    saveDb();
+
+    res.json({
+      success: true,
+      message: "Password updated successfully! You can now log in with your new password."
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Sync endpoint to merge client-side localStorage state with server-side database
 app.post("/api/sync", (req, res) => {
   try {

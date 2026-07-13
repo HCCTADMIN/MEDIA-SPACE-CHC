@@ -39,9 +39,14 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   // Verification state
-  const [step, setStep] = useState<"login" | "verify">("login");
+  const [step, setStep] = useState<"login" | "verify" | "forgot" | "reset">("login");
   const [verificationEmail, setVerificationEmail] = useState("");
   const [verificationCodeInput, setVerificationCodeInput] = useState("");
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetCodeInput, setResetCodeInput] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   // Simulated mailbox state
   const [simulatedEmails, setSimulatedEmails] = useState<SimulatedEmail[]>(() => {
@@ -62,6 +67,22 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       to: toEmail,
       subject: "🔑 CHC Archive Verification Code",
       body: `Hi there,\n\nThank you for registering at Christian Hope Center Syria Media Space.\n\nYour account is almost ready. Please use the following 6-digit code to verify your email address:\n\nVerification Code: ${code}\n\nOnce verified, an Archive Manager or Administrator will review your account registration.\n\nBest regards,\nChristian Hope Center Admin`,
+      code,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      read: false
+    };
+    setSimulatedEmails((prev) => [newMail, ...prev]);
+    setIsMailboxOpen(true);
+    setSelectedEmailId(newMail.id);
+  };
+
+  const addSimulatedResetEmail = (toEmail: string, code: string) => {
+    if (!code) return;
+    const newMail: SimulatedEmail = {
+      id: `mail_${Date.now()}`,
+      to: toEmail,
+      subject: "🔒 CHC Password Reset Code",
+      body: `Hi there,\n\nYou have requested a password reset for your Christian Hope Center Media Space account.\n\nPlease use the following 6-digit code to complete your password reset:\n\nReset Code: ${code}\n\nIf you did not request this reset, please ignore this email.\n\nBest regards,\nChristian Hope Center Admin`,
       code,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       read: false
@@ -214,6 +235,90 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    setError("");
+    setInfoMessage("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate password reset code.");
+      }
+
+      // Add simulated email
+      if (data.resetCode) {
+        addSimulatedResetEmail(data.email || forgotEmail, data.resetCode);
+      }
+
+      // Switch to reset step
+      setStep("reset");
+      setVerificationEmail(data.email || forgotEmail);
+      setError("");
+      setInfoMessage("A password reset code has been sent. Please check the Sandbox Mailbox widget at the bottom right.");
+    } catch (err: any) {
+      setError(err.message || "An error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetCodeInput) {
+      setError("Please enter the 6-digit reset code.");
+      return;
+    }
+    if (!newPassword) {
+      setError("Please enter a new password.");
+      return;
+    }
+
+    setError("");
+    setInfoMessage("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: verificationEmail.trim() || forgotEmail.trim(),
+          code: resetCodeInput.trim(),
+          newPassword: newPassword.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reset password.");
+      }
+
+      setStep("login");
+      setIsSignUp(false);
+      setResetCodeInput("");
+      setNewPassword("");
+      setError("");
+      setInfoMessage("Your password has been reset successfully! You can now log in with your new password.");
+    } catch (err: any) {
+      setError(err.message || "An error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen relative flex flex-col items-center justify-center p-4 overflow-hidden select-none text-gray-900 dark:text-zinc-100">
       
@@ -257,7 +362,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </p>
         </div>
 
-        {step === "login" ? (
+        {step === "login" && (
           <>
             {/* Tab Selection */}
             <div className="grid grid-cols-2 bg-gray-100 dark:bg-zinc-900 p-1 rounded-lg">
@@ -361,7 +466,23 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">Password</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">Password</label>
+                  {!isSignUp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep("forgot");
+                        setError("");
+                        setInfoMessage("");
+                        setForgotEmail(email);
+                      }}
+                      className="text-[11px] text-[#be1f24] hover:underline cursor-pointer"
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 dark:text-zinc-500" />
                   <input
@@ -407,7 +528,9 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               </button>
             </form>
           </>
-        ) : (
+        )}
+
+        {step === "verify" && (
           /* Verification Screen */
           <div className="flex flex-col gap-4">
             <div className="text-center flex flex-col gap-1.5">
@@ -468,6 +591,155 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-zinc-350 underline text-center cursor-pointer transition-all"
               >
                 Back to Sign In / Sign Up
+              </button>
+            </form>
+          </div>
+        )}
+
+        {step === "forgot" && (
+          /* Forgot Password Screen */
+          <div className="flex flex-col gap-4">
+            <div className="text-center flex flex-col gap-1.5">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-zinc-100">Forgot Password</h2>
+              <p className="text-xs text-gray-500 dark:text-zinc-400">
+                Enter your registered email address below, and we will generate a 6-digit password reset code for you.
+              </p>
+            </div>
+
+            {/* Alert Logs */}
+            {error && (
+              <div className="bg-white dark:bg-zinc-900 border border-[#be1f24] text-xs text-gray-800 dark:text-zinc-200 px-4 py-3 rounded-xl flex items-start gap-2.5 shadow-3xs">
+                <ShieldAlert className="w-4 h-4 text-[#be1f24] flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {infoMessage && (
+              <div className="bg-green-50 dark:bg-zinc-900/50 border border-green-200 dark:border-green-900 text-xs text-green-800 dark:text-green-200 px-4 py-3 rounded-xl flex items-start gap-2.5">
+                <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                <span>{infoMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleForgotPassword} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">Email Address</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 dark:text-zinc-500" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. researcher@hopecenter.org"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="w-full text-xs pl-10 pr-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:bg-white dark:focus:bg-zinc-950 focus:border-[#be1f24] text-gray-800 dark:text-zinc-100"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-[#be1f24] hover:opacity-90 active:scale-98 text-white py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Generate Reset Code"
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("login");
+                  setError("");
+                  setInfoMessage("");
+                }}
+                className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-zinc-350 underline text-center cursor-pointer transition-all"
+              >
+                Back to Sign In
+              </button>
+            </form>
+          </div>
+        )}
+
+        {step === "reset" && (
+          /* Reset Password Screen */
+          <div className="flex flex-col gap-4">
+            <div className="text-center flex flex-col gap-1.5">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-zinc-100">Reset Password</h2>
+              <p className="text-xs text-gray-500 dark:text-zinc-400">
+                Enter the 6-digit reset code and your desired new password below.
+              </p>
+            </div>
+
+            {/* Alert Logs */}
+            {error && (
+              <div className="bg-white dark:bg-zinc-900 border border-[#be1f24] text-xs text-gray-800 dark:text-zinc-200 px-4 py-3 rounded-xl flex items-start gap-2.5 shadow-3xs">
+                <ShieldAlert className="w-4 h-4 text-[#be1f24] flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {infoMessage && (
+              <div className="bg-green-50 dark:bg-zinc-900/50 border border-green-200 dark:border-green-900 text-xs text-green-800 dark:text-green-200 px-4 py-3 rounded-xl flex items-start gap-2.5">
+                <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                <span>{infoMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetPassword} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">6-Digit Reset Code</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  required
+                  placeholder="e.g. 123456"
+                  value={resetCodeInput}
+                  onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ""))}
+                  className="w-full text-center tracking-[0.5em] font-mono font-black text-lg py-2 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:bg-white dark:focus:bg-zinc-950 focus:border-[#be1f24] text-gray-800 dark:text-zinc-100"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600 dark:text-zinc-400">New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 dark:text-zinc-500" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter your new password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full text-xs pl-10 pr-3 py-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:bg-white dark:focus:bg-zinc-950 focus:border-[#be1f24] text-gray-800 dark:text-zinc-100"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-[#be1f24] hover:opacity-90 active:scale-98 text-white py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Reset Password"
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("login");
+                  setError("");
+                  setInfoMessage("");
+                }}
+                className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-zinc-350 underline text-center cursor-pointer transition-all"
+              >
+                Back to Sign In
               </button>
             </form>
           </div>

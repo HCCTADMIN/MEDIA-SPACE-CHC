@@ -50,18 +50,17 @@ export function initMockApi() {
     }
   ];
 
+  // FORCE RESET ALL CACHED EMAILS/USERS AS REQUESTED BY USER
+  localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
+
   const hasBeenCleaned = localStorage.getItem("chc_cleaned_v3") === "true";
 
   if (!hasBeenCleaned) {
-    localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
     localStorage.setItem("chc_photos", JSON.stringify([]));
     localStorage.setItem("chc_photographers", JSON.stringify([]));
     localStorage.setItem("chc_cleaned_v3", "true");
   } else {
     // Standard non-destructive initializations
-    if (!localStorage.getItem("chc_users")) {
-      localStorage.setItem("chc_users", JSON.stringify(defaultUsers));
-    }
     if (!localStorage.getItem("chc_photos")) {
       localStorage.setItem("chc_photos", JSON.stringify([]));
     }
@@ -898,31 +897,6 @@ export function initMockApi() {
   }
 
   const newFetch = async function (input: RequestInfo | URL, init?: RequestInit) {
-    const urlStr = typeof input === "string" ? input : (input instanceof URL ? input.href : input.url);
-
-    if (urlStr.includes("/api/")) {
-      if (isServerOffline) {
-        return handleMockRequest(urlStr, init);
-      }
-
-      try {
-        const response = await originalFetch(input, init);
-        const contentType = response.headers.get("content-type") || "";
-        
-        // Detect if server is not responding with JSON, or returning 404 index.html fallback
-        if (contentType.includes("text/html") || response.status === 404) {
-          console.warn("[MOCK API INTERCEPT] API endpoint returned HTML or 404. Switching to Client-Side Mock Database...");
-          isServerOffline = true;
-          return handleMockRequest(urlStr, init);
-        }
-        return response;
-      } catch (error) {
-        console.warn("[MOCK API INTERCEPT] Real backend request failed. Switching to Client-Side Mock Database...", error);
-        isServerOffline = true;
-        return handleMockRequest(urlStr, init);
-      }
-    }
-
     return originalFetch(input, init);
   };
 

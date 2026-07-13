@@ -51,6 +51,8 @@ export interface UserAccount {
   notifications?: NotificationItem[];
   isDeleted?: boolean; // Soft delete to keep in logs
   isPhotographer?: boolean; // badge to mark user as a photographer
+  resetCode?: string;
+  resetCodeExpires?: number;
 }
 
 export interface CameraSettings {
