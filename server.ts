@@ -244,8 +244,13 @@ app.use((req, res, next) => {
 
 // Setup local uploads folder for static storage of user-uploaded images
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
+const PHOTOS_SUBDIR = path.join(UPLOADS_DIR, "photos");
+
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(PHOTOS_SUBDIR)) {
+  fs.mkdirSync(PHOTOS_SUBDIR, { recursive: true });
 }
 app.use("/uploads", express.static(UPLOADS_DIR));
 
@@ -279,12 +284,12 @@ function saveBase64Image(url: string, id: string): string {
     else if (mimeType.includes("gif")) ext = "gif";
 
     const filename = `${id}.${ext}`;
-    const filepath = path.join(UPLOADS_DIR, filename);
+    const filepath = path.join(PHOTOS_SUBDIR, filename);
     
     fs.writeFileSync(filepath, Buffer.from(base64Data, "base64"));
     console.log(`[UPLOADS] Successfully saved base64 image asset to disk: ${filepath}`);
     
-    return `/uploads/${filename}`;
+    return `/uploads/photos/${filename}`;
   } catch (err) {
     console.error("[UPLOADS] Critical failure saving base64 image to disk:", err);
     return url; // fallback to base64 string if file-write fails
@@ -1102,6 +1107,7 @@ app.post("/api/images/bulk", (req, res) => {
 
       if (pendingCount > 0) {
         usersCollection.forEach((u) => {
+          if (!u || !u.role) return;
           if (["super_admin", "archive_manager"].includes(u.role)) {
             if (!u.notifications) u.notifications = [];
             u.notifications.unshift({
@@ -1115,7 +1121,8 @@ app.post("/api/images/bulk", (req, res) => {
       }
       if (approvedCount > 0) {
         usersCollection.forEach((u) => {
-          const isUploader = u.email.toLowerCase() === uploaderEmail.toLowerCase();
+          if (!u || !u.email) return;
+          const isUploader = uploaderEmail && u.email.toLowerCase() === uploaderEmail.toLowerCase();
           if (!isUploader) {
             if (!u.notifications) u.notifications = [];
             u.notifications.unshift({
@@ -1139,6 +1146,7 @@ app.post("/api/images/bulk", (req, res) => {
 
     res.json({ success: true, count: savedPhotos.length, photos: savedPhotos });
   } catch (error: any) {
+    console.error("[BULK UPLOAD SERVER ERROR]:", error);
     res.status(500).json({ error: error.message });
   }
 });

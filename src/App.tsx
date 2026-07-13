@@ -38,10 +38,14 @@ export default function App() {
   const preventClickRef = useRef(false);
 
   // User Authentication State
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+  const [currentUser, setCurrentUser] = useState<UserAccount>(() => {
     const saved = localStorage.getItem("chc_current_user");
     try {
-      return saved ? JSON.parse(saved) : DEFAULT_ADMIN_USER;
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed && parsed.status === "Approved") {
+        return parsed;
+      }
+      return DEFAULT_ADMIN_USER;
     } catch (e) {
       return DEFAULT_ADMIN_USER;
     }
@@ -868,19 +872,7 @@ export default function App() {
     return finalOrder;
   });
 
-  if (!currentUser) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
-  }
-
-  if (currentUser.status !== "Approved") {
-    return (
-      <PendingApprovalScreen
-        user={currentUser}
-        onSignOut={handleSignOut}
-        onRefresh={handleRefreshStatus}
-      />
-    );
-  }
+  // Login is bypassed; user is always authenticated as the default super_admin
 
   const actualIsAdmin = currentUser.role === "super_admin" || currentUser.role === "archive_manager";
   const isAdmin = actualIsAdmin && viewAsMode === "admin";

@@ -462,14 +462,6 @@ export default function Header({
               <Moon className="w-4 h-4 text-slate-700" />
             )}
           </button>
-
-          <button
-            onClick={onSignOut}
-            className="p-2 text-gray-400 hover:text-[#be1f24] dark:text-zinc-500 dark:hover:text-[#be1f24] hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg border border-transparent transition-all cursor-pointer flex items-center justify-center shrink-0"
-            title="Sign Out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
 
       </div>

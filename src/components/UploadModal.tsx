@@ -817,7 +817,21 @@ export default function UploadModal({
       });
 
       if (!res.ok) {
-        throw new Error("Failed to save bulk uploads on the server.");
+        let errMsg = "Failed to save bulk uploads on the server.";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errMsg = `Server error: ${errData.error}`;
+          }
+        } catch (_) {
+          try {
+            const txt = await res.text();
+            if (txt) {
+              errMsg = `Server returned: ${txt.substring(0, 100)}`;
+            }
+          } catch (__) {}
+        }
+        throw new Error(errMsg);
       }
 
       const resData = await res.json();
