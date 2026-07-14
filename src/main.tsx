@@ -53,7 +53,7 @@ const customFetch = async function (input: RequestInfo | URL, init?: RequestInit
         };
       }
       
-      const value = Reflect.get(target, prop, receiver);
+      const value = Reflect.get(target, prop);
       if (typeof value === 'function') {
         return value.bind(target);
       }
