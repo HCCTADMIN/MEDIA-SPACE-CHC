@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Mail, User, ShieldAlert, Loader2, Sparkles, CheckCircle, ChevronRight, Lock, HelpCircle, Briefcase, Eye, Inbox, X } from "lucide-react";
 import { UserAccount, UserRole } from "../types";
+import { auth, googleAuthProvider, signInWithPopup } from "../lib/firebase.ts";
+
 
 interface LoginScreenProps {
   onLoginSuccess: (user: UserAccount) => void;
@@ -129,6 +131,30 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       formatted = formatted + ".user";
     }
     return formatted;
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError("");
+    setInfoMessage("");
+    setIsLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleAuthProvider);
+      const idToken = await result.user.getIdToken();
+      sessionStorage.setItem("firebase_id_token", idToken);
+
+      const res = await fetch("/api/users/me");
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to sync authenticated user details with database.");
+      }
+      const dbUser: UserAccount = await res.json();
+      onLoginSuccess(dbUser);
+    } catch (err: any) {
+      console.error("[GOOGLE AUTH ERROR] Sign-in failed:", err);
+      setError(err.message || "Sign-In with Google failed.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -537,6 +563,28 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 )}
               </button>
             </form>
+
+            <div className="relative my-4 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200 dark:border-zinc-800"></div>
+              </div>
+              <span className="relative bg-white dark:bg-zinc-950 px-3 text-[10px] uppercase tracking-wider text-gray-400 dark:text-zinc-500 font-bold">Or continue with</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-zinc-800 border border-gray-200 dark:border-zinc-800 text-gray-700 dark:text-zinc-200 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-xs active:scale-98"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.92h6.69c-.29 1.5-.1.14 1.14 2.97a1.15 1.15 0 0 1 .18-.28l-3.08-2.39-2.39 3.08a11.66 11.66 0 0 1-5.18-3.38l-3.04 2.36a11.97 11.97 0 0 0 17.51-1.3l.03-.03-.02-.01z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.97-1.08 7.96-2.91l-3.86-3a7.15 7.15 0 0 1-4.1 1.16c-3.17 0-5.85-2.15-6.81-5.05l-3.99 3.09A11.96 11.96 0 0 0 12 24z"/>
+                <path fill="#FBBC05" d="M5.19 14.2c-.25-.74-.39-1.53-.39-2.35s.14-1.61.39-2.35L1.2 6.41A11.96 11.96 0 0 0 0 11.85c0 1.94.46 3.77 1.28 5.4l3.91-3.05z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.22 0 12 0A11.96 11.96 0 0 0 1.2 6.41l3.99 3.09c.96-2.9 3.64-5.05 6.81-5.05z"/>
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
           </>
         )}
 

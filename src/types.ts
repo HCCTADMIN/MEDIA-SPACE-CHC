@@ -34,6 +34,7 @@ export interface FullResRequest {
 
 export interface UserAccount {
   id: string;
+  uid?: string;
   email: string;
   password?: string;
   emailVerified?: boolean;
@@ -125,4 +126,14 @@ export interface Photographer {
   joinedDate?: string;
   status?: "Pending" | "Approved" | "Rejected";
 }
+
+export interface ActionLog {
+  id: string;
+  userId: string;
+  userEmail: string;
+  action: "upload" | "delete" | "approve" | "new_cover" | string;
+  details: string;
+  timestamp: string;
+}
+
 

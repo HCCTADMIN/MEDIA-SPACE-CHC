@@ -14,6 +14,8 @@ import AdminPage from "./components/AdminPage";
 import CustomDialog from "./components/CustomDialog";
 import CommunityFeed from "./components/CommunityFeed";
 import { dialogService } from "./lib/dialog";
+import { auth } from "./lib/firebase.ts";
+import { onAuthStateChanged } from "firebase/auth";
 import { Photo, UserAccount, Photographer } from "./types";
 import { Loader2, Globe, Heart, Compass, ShieldAlert, ChevronRight, ChevronLeft, SlidersHorizontal, ArrowUpDown, Eye, Search } from "lucide-react";
 
@@ -38,18 +40,40 @@ export default function App() {
   const preventClickRef = useRef(false);
 
   // User Authentication State
-  const [currentUser, setCurrentUser] = useState<UserAccount>(() => {
-    const saved = localStorage.getItem("chc_current_user");
-    try {
-      const parsed = saved ? JSON.parse(saved) : null;
-      if (parsed && parsed.status === "Approved") {
-        return parsed;
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // 1. Firebase Auth state listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        if (firebaseUser) {
+          const idToken = await firebaseUser.getIdToken();
+          sessionStorage.setItem("firebase_id_token", idToken);
+
+          // Get full synced user account from our SQL backend
+          const res = await fetch("/api/users/me");
+          if (res.ok) {
+            const dbUser = await res.json();
+            setCurrentUser(dbUser);
+          } else {
+            console.error("[AUTH] Failed to fetch current user profile from PostgreSQL");
+            setCurrentUser(null);
+          }
+        } else {
+          sessionStorage.removeItem("firebase_id_token");
+          setCurrentUser(null);
+        }
+      } catch (err) {
+        console.error("[AUTH] Error checking auth status:", err);
+        setCurrentUser(null);
+      } finally {
+        setAuthLoading(false);
       }
-      return DEFAULT_ADMIN_USER;
-    } catch (e) {
-      return DEFAULT_ADMIN_USER;
-    }
-  });
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // View mode simulation state (for admins/owners)
   const [viewAsMode, setViewAsMode] = useState<"admin" | "user" | "guest">("admin");
@@ -365,9 +389,16 @@ export default function App() {
     safeSaveUserToLocalStorage(user);
   };
 
-  const handleSignOut = () => {
-    setCurrentUser(DEFAULT_ADMIN_USER);
-    localStorage.setItem("chc_current_user", JSON.stringify(DEFAULT_ADMIN_USER));
+  const handleSignOut = async () => {
+    try {
+      const { signOut: firebaseSignOut } = await import("firebase/auth");
+      await firebaseSignOut(auth);
+    } catch (e) {
+      console.error("Firebase signOut failed:", e);
+    }
+    setCurrentUser(null);
+    sessionStorage.removeItem("firebase_id_token");
+    localStorage.removeItem("chc_current_user");
     setIsAdminUsersOpen(false);
   };
 
@@ -872,7 +903,35 @@ export default function App() {
     return finalOrder;
   });
 
-  // Login is bypassed; user is always authenticated as the default super_admin
+  // --- AUTHENTICATION GATES ---
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 text-[#be1f24] animate-spin" />
+        <span className="text-xs font-bold text-gray-500 dark:text-zinc-400 font-sans tracking-wide uppercase animate-pulse">Christian Hope Center Syria Media Space</span>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+        }}
+      />
+    );
+  }
+
+  if (currentUser.status === "Pending" || currentUser.status === "Rejected") {
+    return (
+      <PendingApprovalScreen
+        user={currentUser}
+        onRefresh={handleRefreshStatus}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
 
   const actualIsAdmin = currentUser.role === "super_admin" || currentUser.role === "archive_manager";
   const isAdmin = actualIsAdmin && viewAsMode === "admin";

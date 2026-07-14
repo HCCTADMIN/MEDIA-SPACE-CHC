@@ -4,7 +4,30 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import nodemailer from "nodemailer";
 import { initialPhotos } from "./src/data/initialPhotos.js"; // Esbuild will resolve or compile appropriately
-import { Photo, UserAccount, UserRole, UserStatus, FullResRequest } from "./src/types";
+import { Photo, UserAccount, UserRole, UserStatus, FullResRequest } from "./src/types.ts";
+
+import {
+  getPhotosFromDb,
+  savePhotoToDb,
+  deletePhotoFromDb,
+  getUsersFromDb,
+  saveUserToDb,
+  deleteUserFromDb,
+  getFullResRequestsFromDb,
+  saveFullResRequestToDb,
+  getActionLogsFromDb,
+  saveActionLogToDb,
+  getCollectionsFromDb,
+  saveCollectionToDb,
+  getPhotographersFromDb,
+  savePhotographerToDb,
+  deletePhotographerFromDb,
+  getAppSettingsFromDb,
+  saveAppSettingsToDb
+} from "./src/db/queries.ts";
+import { seedDatabase } from "./src/db/seed.ts";
+import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
+
 
 // In-memory collections
 let appSettings = {
@@ -104,7 +127,7 @@ export interface ActionLog {
   id: string;
   userId: string;
   userEmail: string;
-  action: "upload" | "delete" | "approve" | "new_cover";
+  action: "upload" | "delete" | "approve" | "new_cover" | string;
   details: string;
   timestamp: string;
 }
@@ -172,8 +195,37 @@ let collectionsCollection = [
 
 const DB_FILE = path.join(process.cwd(), "data_store.json");
 
-function saveDb() {
+async function saveDb() {
   try {
+    // 1. Save main config settings
+    await saveAppSettingsToDb(appSettings);
+
+    // 2. Save collections
+    for (const col of collectionsCollection) {
+      await saveCollectionToDb(col);
+    }
+
+    // 3. Save users
+    for (const user of usersCollection) {
+      await saveUserToDb(user);
+    }
+
+    // 4. Save photos
+    for (const photo of photosCollection) {
+      await savePhotoToDb(photo);
+    }
+
+    // 5. Save photographers
+    for (const ph of photographersCollection) {
+      await savePhotographerToDb(ph);
+    }
+
+    // 6. Save full-res requests
+    for (const req of fullResRequests) {
+      await saveFullResRequestToDb(req);
+    }
+
+    // Write a backup JSON payload locally
     const data = {
       appSettings,
       photosCollection,
@@ -185,51 +237,64 @@ function saveDb() {
       collectionsCollection
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+    console.log("[DB] Synchronized memory collections to Cloud SQL database successfully.");
   } catch (err) {
-    console.error("[DB] Failed to save data store:", err);
+    console.error("[DB ERROR] Failed to sync data to Cloud SQL database:", err);
   }
 }
 
-function loadDb() {
+async function loadDb() {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const content = fs.readFileSync(DB_FILE, "utf-8");
-      if (content.trim()) {
-        const data = JSON.parse(content);
-        if (data.appSettings) appSettings = data.appSettings;
-        if (data.photosCollection) photosCollection = data.photosCollection;
-        if (data.usersCollection) {
-          usersCollection = data.usersCollection;
-          // Ensure all users are marked as emailVerified to avoid code verification screens
-          usersCollection.forEach((u: any) => {
-            u.emailVerified = true;
-          });
-        }
-        if (data.photographersCollection) photographersCollection = data.photographersCollection;
-        if (data.deletedUsersLog) deletedUsersLog = data.deletedUsersLog;
-        if (data.fullResRequests) fullResRequests = data.fullResRequests;
-        if (data.actionLogs) actionLogs = data.actionLogs;
-        if (data.collectionsCollection) collectionsCollection = data.collectionsCollection;
-        console.log("[DB] Loaded persistent data store successfully.");
-        return;
-      }
+    // 1. Run database seeding
+    await seedDatabase();
+
+    // 2. Fetch latest data from database
+    const dbPhotos = await getPhotosFromDb();
+    if (dbPhotos.length > 0) {
+      photosCollection = dbPhotos;
     }
+
+    const dbUsers = await getUsersFromDb();
+    if (dbUsers.length > 0) {
+      usersCollection = dbUsers;
+    }
+
+    const dbPhotographers = await getPhotographersFromDb();
+    if (dbPhotographers.length > 0) {
+      photographersCollection = dbPhotographers;
+    }
+
+    const dbRequests = await getFullResRequestsFromDb();
+    if (dbRequests.length > 0) {
+      fullResRequests = dbRequests;
+    }
+
+    const dbLogs = await getActionLogsFromDb();
+    if (dbLogs.length > 0) {
+      actionLogs = dbLogs;
+    }
+
+    const dbCollections = await getCollectionsFromDb();
+    if (dbCollections.length > 0) {
+      collectionsCollection = dbCollections;
+    }
+
+    const dbSettings = await getAppSettingsFromDb();
+    appSettings = dbSettings;
+
+    console.log("[DB] Successfully pulled all synchronized collections from Cloud SQL PostgreSQL.");
   } catch (err) {
-    console.error("[DB] Failed to load data store, using defaults:", err);
+    console.warn("[DB WARNING] Cloud SQL was unreachable or errored, defaulting to in-memory datasets:", err);
   }
-  // If file doesn't exist or is invalid, create it with initial data
-  saveDb();
 }
 
-// Load database immediately on server startup
-loadDb();
 
 const app = express();
 const PORT = 3000;
 
 // Body parser
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "200mb" }));
+app.use(express.urlencoded({ limit: "200mb", extended: true }));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -646,6 +711,11 @@ app.post("/api/sync", (req, res) => {
   }
 });
 
+// 2b. Get current user profile (using Firebase auth)
+app.get("/api/users/me", requireAuth, (req: AuthRequest, res) => {
+  res.json(req.user);
+});
+
 // 3. Get all users (Admin only)
 app.get("/api/users", (req, res) => {
   try {
@@ -984,7 +1054,7 @@ app.get("/api/images", (req, res) => {
 });
 
 // 2. Add a new photo manually or from submission
-app.post("/api/images", (req, res) => {
+app.post("/api/images", requireAuth, (req, res) => {
   try {
     const newPhoto: Photo = req.body;
     if (!newPhoto.id || !newPhoto.url || !newPhoto.title) {
@@ -1062,7 +1132,7 @@ app.post("/api/images", (req, res) => {
 });
 
 // 2.2 Add multiple photos in bulk
-app.post("/api/images/bulk", (req, res) => {
+app.post("/api/images/bulk", requireAuth, (req, res) => {
   try {
     const newPhotos: Photo[] = req.body;
     if (!Array.isArray(newPhotos)) {
@@ -1818,10 +1888,23 @@ CRITICAL RULES:
   }
 });
 
+// Global Error Handler for body-parser issues (e.g. payload too large) or other unhandled errors
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("[GLOBAL SERVER ERROR]:", err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: err.message || "An unexpected server error occurred.",
+    code: err.code || "SERVER_ERROR"
+  });
+});
+
 // Vite / static asset serving configuration
 const isProd = process.env.NODE_ENV === "production";
 
 async function setupServer() {
+  // Await seeding and data loading from Cloud SQL on boot
+  await loadDb();
+
   if (!isProd) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1841,6 +1924,7 @@ async function setupServer() {
     console.log(`Server running on port ${PORT} (isProd: ${isProd})`);
   });
 }
+
 
 setupServer().catch((err) => {
   console.error("Failed to start server:", err);

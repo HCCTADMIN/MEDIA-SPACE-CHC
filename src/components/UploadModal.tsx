@@ -819,17 +819,25 @@ export default function UploadModal({
       if (!res.ok) {
         let errMsg = "Failed to save bulk uploads on the server.";
         try {
-          const errData = await res.json();
-          if (errData && errData.error) {
-            errMsg = `Server error: ${errData.error}`;
-          }
-        } catch (_) {
+          const text = await res.text();
           try {
-            const txt = await res.text();
-            if (txt) {
-              errMsg = `Server returned: ${txt.substring(0, 100)}`;
+            const parsed = JSON.parse(text);
+            if (parsed && parsed.error) {
+              errMsg = `Server error: ${parsed.error}`;
+            } else if (parsed && parsed.message) {
+              errMsg = `Server error: ${parsed.message}`;
+            } else {
+              errMsg = `Server returned status ${res.status}: ${text.substring(0, 150)}`;
             }
-          } catch (__) {}
+          } catch (_) {
+            if (text) {
+              errMsg = `Server returned: ${text.substring(0, 150)}`;
+            } else {
+              errMsg = `Server returned status ${res.status}`;
+            }
+          }
+        } catch (readErr: any) {
+          errMsg = `Network or response reading error: ${readErr.message || readErr}`;
         }
         throw new Error(errMsg);
       }
