@@ -43,8 +43,28 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // 1. Firebase Auth state listener
+  // 1. Firebase Auth state listener and local session recovery
   useEffect(() => {
+    let active = true;
+
+    async function checkLocalSession(): Promise<boolean> {
+      const localToken = sessionStorage.getItem("firebase_id_token");
+      if (localToken && localToken.startsWith("local_")) {
+        try {
+          const res = await fetch("/api/users/me");
+          if (res.ok && active) {
+            const dbUser = await res.json();
+            setCurrentUser(dbUser);
+            setAuthLoading(false);
+            return true;
+          }
+        } catch (err) {
+          console.error("[AUTH] Failed checking local session:", err);
+        }
+      }
+      return false;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
@@ -53,26 +73,36 @@ export default function App() {
 
           // Get full synced user account from our SQL backend
           const res = await fetch("/api/users/me");
-          if (res.ok) {
+          if (res.ok && active) {
             const dbUser = await res.json();
             setCurrentUser(dbUser);
-          } else {
+          } else if (active) {
             console.error("[AUTH] Failed to fetch current user profile from PostgreSQL");
             setCurrentUser(null);
           }
         } else {
-          sessionStorage.removeItem("firebase_id_token");
-          setCurrentUser(null);
+          // If there's a custom local token in sessionStorage, check and restore it instead of clearing
+          const isLocal = await checkLocalSession();
+          if (!isLocal && active) {
+            sessionStorage.removeItem("firebase_id_token");
+            setCurrentUser(null);
+          }
         }
       } catch (err) {
         console.error("[AUTH] Error checking auth status:", err);
-        setCurrentUser(null);
+        if (active) setCurrentUser(null);
       } finally {
-        setAuthLoading(false);
+        if (active) setAuthLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    // Run local session check immediately
+    checkLocalSession();
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   // View mode simulation state (for admins/owners)

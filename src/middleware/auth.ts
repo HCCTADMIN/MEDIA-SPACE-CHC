@@ -3,6 +3,30 @@ import { adminAuth } from "../lib/firebase-admin.ts";
 import { db } from "../db/index.ts";
 import { users } from "../db/schema.ts";
 import { eq } from "drizzle-orm";
+import crypto from "crypto";
+
+const LOCAL_SECRET = process.env.LOCAL_JWT_SECRET || crypto.randomBytes(32).toString("hex");
+
+export function generateLocalToken(uid: string): string {
+  const signature = crypto.createHmac("sha256", LOCAL_SECRET).update(uid).digest("hex");
+  return `local_${Buffer.from(uid).toString("base64")}.${signature}`;
+}
+
+export function verifyLocalToken(token: string): string | null {
+  if (!token.startsWith("local_")) return null;
+  try {
+    const parts = token.substring(6).split(".");
+    if (parts.length !== 2) return null;
+    const uid = Buffer.from(parts[0], "base64").toString("utf-8");
+    const expectedSignature = crypto.createHmac("sha256", LOCAL_SECRET).update(uid).digest("hex");
+    if (crypto.timingSafeEqual(Buffer.from(parts[1]), Buffer.from(expectedSignature))) {
+      return uid;
+    }
+  } catch (e) {
+    console.error("Local token verification error:", e);
+  }
+  return null;
+}
 
 export interface AuthRequest extends Request {
   user?: {
@@ -31,6 +55,40 @@ export const requireAuth = async (
   }
 
   const token = authHeader.split("Bearer ")[1];
+
+  // 1. Check if custom local token
+  if (token && token.startsWith("local_")) {
+    const uid = verifyLocalToken(token);
+    if (!uid) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or expired custom token." });
+    }
+
+    try {
+      const dbUser = await db.select().from(users).where(eq(users.uid, uid)).then(r => r[0]);
+      if (!dbUser) {
+        return res.status(401).json({ error: "Unauthorized: User account not found." });
+      }
+
+      req.user = {
+        id: dbUser.uid,
+        uid: dbUser.uid,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        status: dbUser.status,
+        avatarUrl: dbUser.avatarUrl || undefined,
+        coverUrl: dbUser.coverUrl || undefined,
+        bio: dbUser.bio || undefined,
+        organization: dbUser.organization || undefined,
+      };
+      return next();
+    } catch (dbErr: any) {
+      console.error("[AUTH] Database query failed for local token:", dbErr);
+      return res.status(500).json({ error: "Internal server error authenticating user." });
+    }
+  }
+
+  // 2. Otherwise, verify via Firebase Admin
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     const email = decodedToken.email;

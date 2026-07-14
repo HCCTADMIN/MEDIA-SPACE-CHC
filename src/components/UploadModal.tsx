@@ -722,7 +722,14 @@ export default function UploadModal({
       });
 
       if (!res.ok) {
-        throw new Error("Failed to save uploaded image in photo library backend.");
+        let errMsg = "Failed to save uploaded image in photo library backend.";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errMsg = errData.error;
+          }
+        } catch (e) {}
+        throw new Error(errMsg);
       }
 
       const resData = await res.json();

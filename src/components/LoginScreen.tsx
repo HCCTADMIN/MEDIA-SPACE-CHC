@@ -227,6 +227,9 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           throw new Error(data.error || "Login failed.");
         }
 
+        if (data.token) {
+          sessionStorage.setItem("firebase_id_token", data.token);
+        }
         onLoginSuccess(data.user);
       }
     } catch (err: any) {

@@ -26,7 +26,7 @@ import {
   saveAppSettingsToDb
 } from "./src/db/queries.ts";
 import { seedDatabase } from "./src/db/seed.ts";
-import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
+import { requireAuth, AuthRequest, generateLocalToken } from "./src/middleware/auth.ts";
 
 
 // In-memory collections
@@ -422,7 +422,8 @@ app.post("/api/auth/login", async (req, res) => {
       return;
     }
 
-    res.json({ user, message: "Logged in successfully." });
+    const token = generateLocalToken(user.uid || user.id);
+    res.json({ user, token, message: "Logged in successfully." });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
