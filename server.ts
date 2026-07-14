@@ -429,6 +429,49 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// 1b. Simulated Sandbox Google Login (Fallback for unauthorized-domain issues in Cloud Run)
+app.post("/api/auth/google-sandbox", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: "Email is required for sandbox Google Sign-In." });
+      return;
+    }
+
+    let user = usersCollection.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    if (!user) {
+      const isOwner = email.toLowerCase() === "ct.aleppo2@gmail.com";
+      const defaultRole = isOwner ? "super_admin" : "external_user";
+      const defaultStatus = isOwner ? "Approved" : "Pending";
+      const name = email.split("@")[0];
+
+      user = {
+        id: isOwner ? "user_owner1" : `user_${Date.now()}`,
+        uid: isOwner ? "user_owner1" : `user_${Date.now()}`,
+        email: email.toLowerCase(),
+        name: name,
+        role: defaultRole,
+        status: defaultStatus,
+        createdAt: new Date().toISOString().split("T")[0],
+        provider: "google",
+        avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(email)}`,
+        bio: isOwner ? "Main System Owner & Administrator." : "External Collaborator",
+        organization: isOwner ? "Christian Hope Center Aleppo" : ""
+      };
+
+      usersCollection.push(user);
+      await saveUserToDb(user);
+      saveDb();
+    }
+
+    const token = generateLocalToken(user.uid || user.id);
+    res.json({ user, token, message: "Sandbox Google login simulated successfully." });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 2. User Registration (Email-based)
 app.post("/api/auth/register", async (req, res) => {
   try {
